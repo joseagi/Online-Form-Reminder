@@ -15,8 +15,9 @@ Internal web app for an office of up to about 20 staff:
 |---|---|
 | 1. Environment & requirements | Done. Architecture approved 2026-10-14 |
 | 2a. Repo + Next.js scaffold | Done |
-| 2b. Supabase local stack, schema, audit, deny-by-default RLS | Done. 79 pgTAP tests passing |
-| 2c. RLS access policies + permission tests | Next |
+| 2b. Supabase local stack, schema, audit, deny-by-default RLS | Done |
+| 2c. RLS access policies + permission tests | Done. 128 pgTAP tests passing |
+| 2d. Sign-in (invite-only), session handling, protected pages | Next |
 
 ## Prerequisites (Windows)
 

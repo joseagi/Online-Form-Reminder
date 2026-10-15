@@ -1,4 +1,4 @@
--- Audit trail behaviour, and deny-by-default access before any RLS policies exist.
+-- Audit trail behaviour, and protection of the audit log itself.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(14);
@@ -49,14 +49,14 @@ select is((select changed_fields from public.audit_logs
             where action = 'system_settings.update' order by id desc limit 1),
           array['weekly_summary_send_time'], 'settings changes are audited field by field');
 
--- Deny by default: no policies exist yet (they arrive in stage 2c) --------------------
+-- The audit log is read-only for staff, and append-only for every API role ---------------
 set local role authenticated;
 
-select is((select count(*)::int from public.activities), 0,
-          'with no policies yet, signed-in users see no activities');
+select is((select count(*)::int from public.audit_logs), 0,
+          'staff cannot read the audit log');
 select throws_ok(
-  $$ insert into public.activities (title, activity_date) values ('Sneaky', '2026-11-03') $$,
-  '42501', null, 'with no policies yet, signed-in users cannot create activities');
+  $$ update public.audit_logs set action = 'tampered' $$,
+  '42501', null, 'signed-in users cannot alter audit entries');
 select throws_ok(
   $$ insert into public.audit_logs (action) values ('forged') $$,
   '42501', null, 'signed-in users cannot forge audit entries');

@@ -368,14 +368,16 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 
 | Table | Staff | Admin | Anonymous |
 |---|---|---|---|
-| profiles | Read active profiles (to pick collaborators). Update own name and phone only; a trigger blocks changes to `role`/`is_active` | Full read/update. Can't remove the last admin | None |
+| profiles | Read all profiles (the staff directory; former staff still appear on old activities). Update own name and phone only; a trigger blocks changes to role, access, summary subscription and email | Full read/update. Can't demote or deactivate the last active admin | None |
 | contacts | Read, create. Update the ones they created | Full | None |
 | activities | Read `office` activities. Read `restricted` ones only if creator or recipient. Create as self. Update if creator or responsible person. **No delete** | Read and update all. No hard delete; cancel instead | None |
 | activity_recipients | Follows the parent activity's read and edit rights | Full | None |
-| notification_jobs / logs | Read-only status of reminders on activities they can edit | Read. Retry and cancel via RPC | None |
-| system_settings | Read non-sensitive fields (via a view) | Read and update | None |
+| notification_jobs | Read-only, for activities they can edit | Read. Retry and cancel via RPC (Phase 5) | None |
+| notification_logs | None | Read only | None |
+| system_settings | None. If the UI needs the office name or time zone, a function will expose them (Phase 3) | Read and update | None |
 | audit_logs | None | Read only | None |
 
+- **Implemented in stage 2c:** `supabase/migrations/20261015090000_access_policies.sql`, verified by `supabase/tests/database/05_access_policies.test.sql`. Signed-in users hold no `DELETE` on activities and no `TRUNCATE` anywhere, because `TRUNCATE` would bypass RLS.
 - The browser only ever holds the publishable key. The secret key exists only in server-side code: the admin invite action and the Edge Functions.
 - Every server action re-checks authorisation and does not rely on the UI hiding buttons.
 
