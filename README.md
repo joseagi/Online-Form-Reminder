@@ -15,7 +15,8 @@ Internal web app for an office of up to about 20 staff:
 |---|---|
 | 1. Environment & requirements | Done. Architecture approved 2026-10-14 |
 | 2a. Repo + Next.js scaffold | Done |
-| 2b. Supabase local stack, schema, RLS | Next. Needs WSL 2 + Docker Desktop |
+| 2b. Supabase local stack, schema, audit, deny-by-default RLS | Done. 79 pgTAP tests passing |
+| 2c. RLS access policies + permission tests | Next |
 
 ## Prerequisites (Windows)
 
@@ -45,6 +46,26 @@ npm run dev                         # http://localhost:3000
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate Next.js route types, then `tsc --noEmit` |
+| `npm run db:start` | Start the local Supabase stack (Docker Desktop must be running). Prints the local URL and keys |
+| `npm run db:stop` | Stop the local stack |
+| `npm run db:reset` | Rebuild the local database from `supabase/migrations/` |
+| `npm run db:test` | Run the pgTAP database tests in `supabase/tests/database/` |
+| `npm run db:lint` | Check database functions for errors |
+
+The local stack leaves out Supabase Studio and the Edge Functions runtime until they're needed (Phase 4). The keys `db:start` prints are the standard local-development keys, not production secrets.
+
+### Database changes
+
+Every schema change is a new SQL file in `supabase/migrations/`; applied migrations are never edited. After adding one, run `npm run db:reset` and `npm run db:test`.
+
+### Troubleshooting: Docker image downloads fail
+
+If `db:start` can't download images from `public.ecr.aws` or `ghcr.io`, tell the CLI to use Docker Hub for that session:
+
+```powershell
+$env:SUPABASE_INTERNAL_IMAGE_REGISTRY = 'docker.io'
+npm run db:start
+```
 
 ## Security rules
 
