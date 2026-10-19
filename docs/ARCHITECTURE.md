@@ -73,6 +73,14 @@ Assumptions that need your confirmation are listed in §11.
   - Publishable key (`sb_publishable_…`): browser-safe, RLS applies.
   - Secret key (`sb_secret_…`): bypasses RLS, server-only, and rejected in browsers.
 - Supabase is deprecating the legacy `anon` and `service_role` JWT keys by the end of 2026.
+- **Implemented in stage 2d:**
+  - Email and password sign-in, with sessions in cookies refreshed by `src/proxy.ts` using `getClaims()`.
+  - A per-request access check in `src/lib/auth.ts`. Deactivated profiles count as signed out.
+  - Invite and reset links that land on `/auth/confirm` and need a button press, so email scanners can't use up the one-time token.
+  - Password policy: at least 10 characters, with letters and digits.
+  - The first admin is created with `npm run admin:create`.
+- **For production (Phase 7):** copy `supabase/templates/*.html` into the hosted project's email templates, set its Site URL to the production address, turn off public sign-up, and apply the same password policy.
+- **Not done yet:** staff invitations aren't yet recorded as a semantic audit event (the new profile row is audited). This comes with the Phase 3 admin screens.
 - Auth emails (invites, password resets) go through **Resend as custom SMTP**. Supabase's built-in SMTP sends only to project team addresses and is limited to 2 messages/hour.
 
 ### AD-03 Data access: SQL migrations + supabase-js + Postgres functions (no Prisma)

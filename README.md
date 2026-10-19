@@ -17,7 +17,8 @@ Internal web app for an office of up to about 20 staff:
 | 2a. Repo + Next.js scaffold | Done |
 | 2b. Supabase local stack, schema, audit, deny-by-default RLS | Done |
 | 2c. RLS access policies + permission tests | Done. 128 pgTAP tests passing |
-| 2d. Sign-in (invite-only), session handling, protected pages | Next |
+| 2d. Sign-in (invite-only), password reset, protected pages, staff invitations | Done |
+| 2e. Continuous integration (GitHub Actions) | Next |
 
 ## Prerequisites (Windows)
 
@@ -34,9 +35,22 @@ Internal web app for an office of up to about 20 staff:
 
 ```powershell
 npm install
-Copy-Item .env.example .env.local   # fill in values once Supabase is set up (Phase 2b)
+npm run db:start                    # local Supabase (Docker Desktop must be running)
+Copy-Item .env.example .env.local   # then paste the API URL and keys that db:start printed
+npm run admin:create -- --email you@example.com --name "Your Name"   # prints a one-time password
 npm run dev                         # http://localhost:3000
 ```
+
+Sign in with the one-time password, then choose your own under **Change password**. Everyone else is invited from **Staff**; there is no public sign-up.
+
+Locally, no email leaves your machine: invitations and password-reset emails are caught by Mailpit at http://127.0.0.1:54324.
+
+### How sign-in works
+
+- **Accounts:** Supabase Auth handles them with email and password. A session cookie is refreshed by `src/proxy.ts`.
+- **Access checks:** every page and Server Action checks access itself (`src/lib/auth.ts`), and the database enforces the same rules with RLS. `proxy.ts` only redirects signed-out visitors; it isn't the security boundary.
+- **Email links:** invite and password-reset links open `/auth/confirm`, which asks the person to press a button. Email security scanners that open links therefore can't use up the one-time token.
+- **Deactivated staff** are treated as signed out, even if they still have a valid password.
 
 ## Scripts
 
@@ -47,6 +61,10 @@ npm run dev                         # http://localhost:3000
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate Next.js route types, then `tsc --noEmit` |
+| `npm test` | Unit tests (Vitest, `src/**/*.test.ts`) |
+| `npm run e2e` | Browser tests (Playwright, `e2e/`). Needs the local stack running; builds and starts the app on port 3000 unless it's already running. First time only: `npx playwright install chromium`. Or use the Edge already on Windows: `$env:PLAYWRIGHT_CHANNEL='msedge'; npm run e2e`. The tests leave `e2e-…@example.com` users in the local database; `npm run db:reset` clears them |
+| `npm run admin:create -- --email … --name "…"` | Create the first administrator for an environment (uses `SUPABASE_SECRET_KEY`) |
+| `npm run db:types` | Regenerate `src/lib/database.types.ts` after a schema change |
 | `npm run db:start` | Start the local Supabase stack (Docker Desktop must be running). Prints the local URL and keys |
 | `npm run db:stop` | Stop the local stack |
 | `npm run db:reset` | Rebuild the local database from `supabase/migrations/` |

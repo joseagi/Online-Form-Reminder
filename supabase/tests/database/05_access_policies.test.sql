@@ -31,6 +31,16 @@ $$;
 grant usage on schema tests to authenticated;
 grant execute on function tests.rows_affected(text) to authenticated;
 
+-- Isolate from rows already in the database (e.g. users made by browser tests or by
+-- `npm run admin:create`), so counts and the last-admin rule see only these fixtures.
+-- Everything in this file is rolled back at the end.
+alter table public.profiles disable trigger profiles_guard_update;
+update public.profiles set is_active = false;
+alter table public.profiles enable trigger profiles_guard_update;
+delete from public.notification_jobs;
+delete from public.activities;
+delete from public.contacts;
+
 -- Fixtures (as the table owner) -----------------------------------------------------------
 insert into auth.users (id, email, raw_user_meta_data) values
   ('00000000-0000-4000-8000-0000000000f0', 'amaka@example.com',  '{"full_name": "Amaka Admin"}'),
