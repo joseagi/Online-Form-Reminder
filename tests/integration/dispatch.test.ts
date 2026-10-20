@@ -1,20 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { admin, dispatch, finishedJob, requireDispatchSecret } from './support';
 
 // The dispatcher Edge Function, end to end against the LOCAL stack: real HTTP call, real database
 // functions, log-only provider (nothing is delivered anywhere).
-
-process.loadEnvFile('.env.local');
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-// Normally through the local API gateway (Edge Runtime). DISPATCH_FUNCTION_URL can point at the
-// same code run directly with Deno instead (e.g. http://127.0.0.1:8000).
-const FUNCTION_URL = process.env.DISPATCH_FUNCTION_URL ?? `${SUPABASE_URL}/functions/v1/dispatch-notifications`;
-const SECRET = readFileSync('supabase/functions/.env', 'utf8').match(/^DISPATCH_SECRET=(.+)$/m)?.[1]?.trim();
-
-const admin = createClient(SUPABASE_URL, process.env.SUPABASE_SECRET_KEY!, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 
 function addDays(isoDate: string, days: number): string {
   const date = new Date(`${isoDate}T00:00:00Z`);
@@ -31,16 +19,6 @@ let settingsBefore: Record<string, unknown>;
 let userId: string;
 const activityIds: string[] = [];
 const jobIds: string[] = [];
-
-// secret: omitted = the real one, null = send no secret header at all.
-async function dispatch({ secret = SECRET, method = 'POST' }: { secret?: string | null; method?: string } = {}) {
-  const response = await fetch(FUNCTION_URL, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-dispatch-secret': secret } : {}) },
-    body: method === 'POST' ? '{}' : undefined,
-  });
-  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
-}
 
 async function setMode(mode: 'off' | 'test' | 'live') {
   const { error } = await admin.from('system_settings').update({ notification_mode: mode }).eq('id', true);
@@ -70,18 +48,8 @@ async function dueSummaryJob(periodStart: string, label: string): Promise<string
   return data.id;
 }
 
-// Waits until a job is finished (the 5-minute schedule may pick it up first; the outcome is the same).
-async function finishedJob(id: string) {
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const { data } = await admin.from('notification_jobs').select('*').eq('id', id).single();
-    if (data && !['pending', 'processing'].includes(data.status)) return data;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`job ${id} did not finish`);
-}
-
 beforeAll(async () => {
-  if (!SECRET) throw new Error('Run `npm run dispatch:setup` first (supabase/functions/.env has no DISPATCH_SECRET).');
+  requireDispatchSecret();
 
   // Warm-up: the Edge Runtime downloads the function's dependencies on its first call after a
   // restart, which can take a while on a slow connection. (Deployed functions are pre-bundled.)
@@ -115,6 +83,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await admin.from('system_settings').update(settingsBefore).eq('id', true);
   if (jobIds.length) await admin.from('notification_jobs').delete().in('id', jobIds);
+  // (Including the reminders the activity's own people were given.)
+  if (activityIds.length) await admin.from('notification_jobs').delete().in('activity_id', activityIds);
   if (activityIds.length) await admin.from('activities').delete().in('id', activityIds);
 });
 

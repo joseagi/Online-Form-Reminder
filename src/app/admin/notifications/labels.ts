@@ -19,10 +19,10 @@ export const STATUS_STYLES: Record<JobRow['status'], string> = {
   skipped: 'border-amber-300 text-amber-800 dark:border-amber-800 dark:text-amber-300',
 };
 
-export function describeJob(job: Pick<JobRow, 'kind' | 'period_start'>): string {
+export function describeJob(job: Pick<JobRow, 'kind' | 'period_start' | 'activity'>): string {
   if (job.kind === 'weekly_summary') return `Weekly summary${job.period_start ? `, week of ${formatDate(job.period_start)}` : ''}`;
   if (job.kind === 'test') return 'Test message';
-  return 'Day-before reminder';
+  return job.activity ? `Reminder: ${job.activity.title}` : 'Day-before reminder';
 }
 
 const DELIVERY_LABELS: Record<string, string> = {

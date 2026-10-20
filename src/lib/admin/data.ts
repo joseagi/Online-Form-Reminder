@@ -49,14 +49,16 @@ export const JOB_FILTERS = {
 export type JobFilter = keyof typeof JOB_FILTERS;
 
 const JOB_COLUMNS =
-  'id, kind, destination, period_start, scheduled_for, status, status_reason, attempt_count, provider, send_mode, ' +
-  'accepted_at, delivery_status, last_error_message, created_at';
+  'id, kind, destination, period_start, activity_id, activity:activities(title), scheduled_for, status, status_reason, ' +
+  'attempt_count, provider, send_mode, accepted_at, delivery_status, last_error_message, created_at';
 
 export type JobRow = {
   id: string;
   kind: 'day_before_reminder' | 'weekly_summary' | 'test';
   destination: string;
   period_start: string | null;
+  activity_id: string | null;
+  activity: { title: string } | null; // reminders: the activity it is about
   scheduled_for: string;
   status: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled' | 'skipped';
   status_reason: string | null;
@@ -71,13 +73,17 @@ export type JobRow = {
 
 export const JOB_LIST_LIMIT = 100;
 
-// Latest due first, so summaries planned for coming Sundays head the list.
+// Waiting messages: the next one due first. Everything else: the latest due first.
 export async function listNotificationJobs(filter: JobFilter, limit = JOB_LIST_LIMIT): Promise<JobRow[]> {
   const supabase = await createClient();
   let query = supabase.from('notification_jobs').select(JOB_COLUMNS);
   const statuses = JOB_FILTERS[filter];
   if (statuses) query = query.in('status', [...statuses]);
-  const { data, error } = await query.order('scheduled_for', { ascending: false }).order('id').limit(limit).returns<JobRow[]>();
+  const { data, error } = await query
+    .order('scheduled_for', { ascending: filter === 'waiting' })
+    .order('id')
+    .limit(limit)
+    .returns<JobRow[]>();
   if (error) throw new Error(`Could not load notifications: ${error.message}`);
   return data;
 }

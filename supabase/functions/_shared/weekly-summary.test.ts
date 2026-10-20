@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markAsTest, renderWeeklySummary, weekRange, type SummaryItem } from './weekly-summary.ts';
+import { renderWeeklySummary, weekRange, type SummaryItem } from './weekly-summary.ts';
 
 const base = { officeName: 'Lagos Office', officeTimezone: 'Africa/Lagos', appUrl: 'https://office.example', delayed: false };
 
@@ -94,14 +94,5 @@ describe('renderWeeklySummary', () => {
     const late = renderWeeklySummary({ ...base, delayed: true, periodStart: '2026-11-02', items });
     expect(late.subject).toBe('(Delayed) Lagos Office: the week ahead, 2–8 November 2026');
     expect(late.text).toContain('later than usual');
-  });
-});
-
-describe('markAsTest', () => {
-  it('labels the subject and says who would have received it', () => {
-    const marked = markAsTest({ subject: 'Hello', html: '<p>Hi</p>', text: 'Hi' }, 'ada@example.com');
-    expect(marked.subject).toBe('[TEST] Hello');
-    expect(marked.text).toMatch(/^TEST MESSAGE: in live mode this would have gone to ada@example.com\./);
-    expect(marked.html).toContain('<p>Hi</p>');
   });
 });

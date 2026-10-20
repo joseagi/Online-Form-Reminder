@@ -104,6 +104,26 @@ test('an admin manages who receives the summary', async ({ page }) => {
   );
 });
 
+test('saving an activity plans a reminder for each person, listed by activity in the notification log', async ({ page }) => {
+  const title = `Reminder check ${run}`;
+  // Two days ahead at 10:00 office time: the reminders are due tomorrow, so they are still waiting.
+  const inTwoDays = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  await createActivityAs(admin, { title, activity_date: inTwoDays, start_time: '10:00' }, [
+    { profile_id: admin.id, role: 'responsible' },
+    { profile_id: staff.id, role: 'collaborator' },
+  ]);
+
+  await signInAs(page, admin, '/admin/notifications?status=waiting');
+  const rows = page.getByTestId('notification-row').filter({ hasText: `Reminder: ${title}` });
+  await expect(rows).toHaveCount(2);
+  const staffRow = rows.filter({ hasText: staff.email });
+  await expect(staffRow).toContainText('Waiting');
+
+  await staffRow.getByRole('link', { name: /Details/ }).click();
+  await expect(page.getByRole('heading', { name: `Reminder: ${title}` })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open the activity' })).toHaveAttribute('href', /^\/activities\/[0-9a-f-]{36}$/);
+});
+
 test('"Send test to me" goes out straight away and shows up in the notification log', async ({ page }) => {
   await updateSettings({ notification_mode: 'off' });
   await signInAs(page, admin, '/admin/summary');

@@ -1,15 +1,18 @@
 // Notification dispatcher. Called every few minutes by Supabase Cron (pg_cron + pg_net), and only
 // with the shared dispatch secret. Each run:
-//   1. plans the weekly summaries (idempotent),
+//   1. plans the weekly summaries and reminders (idempotent),
 //   2. claims due jobs (leases them, so concurrent runs never share a job),
-//   3. builds each message (rendered once, then frozen so retries resend the same payload),
+//   3. builds each message (rendered once, then frozen so retries resend the same payload);
+//      reminders are re-checked against the activity on every attempt,
 //   4. sends it through the provider chosen by the test-mode gate,
 //   5. records the outcome, and logs run.started / run.finished as a heartbeat.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { markAsTest, type RenderedMessage } from '../_shared/message.ts';
 import { resolveGate, type Gate, type SettingsMode } from '../_shared/mode.ts';
 import { LogProvider, type NotificationProvider } from '../_shared/providers.ts';
+import { renderReminder, type ReminderDetails } from '../_shared/reminder.ts';
 import { constantTimeEqual } from '../_shared/security.ts';
-import { markAsTest, renderWeeklySummary, type RenderedMessage, type SummaryItem } from '../_shared/weekly-summary.ts';
+import { renderWeeklySummary, type SummaryItem } from '../_shared/weekly-summary.ts';
 
 type Job = {
   id: string;
@@ -49,8 +52,15 @@ type Counts = {
 // A summary that goes out more than this long after its scheduled time is marked as delayed.
 const DELAYED_AFTER_MS = 30 * 60 * 1000;
 
+// The message for a job, or why it is not sent.
+type Built = { message: RenderedMessage } | { skip: string };
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function appUrl(): string {
+  return Deno.env.get('APP_URL') ?? 'http://localhost:3000';
 }
 
 function serviceKey(): string {
@@ -93,7 +103,7 @@ Deno.serve(async (request) => {
 });
 
 async function dispatch(supabase: SupabaseClient, runId: string, counts: Counts): Promise<void> {
-  const planned = await supabase.rpc('plan_weekly_summaries');
+  const planned = await supabase.rpc('plan_notifications');
   if (planned.error) throw new Error(`planning failed: ${planned.error.message}`);
   counts.planned = planned.data ?? 0;
 
@@ -157,18 +167,13 @@ async function complete(ctx: Context, job: Job, outcome: Record<string, unknown>
 
 async function processJob(ctx: Context, job: Job): Promise<string> {
   if (ctx.gate.action === 'skip') return complete(ctx, job, { p_outcome: 'skipped', p_reason: ctx.gate.reason });
-  // "Send test to me": the coming week's summary, sent to the administrator who asked for it.
-  const isTestRequest = job.kind === 'test';
-  if (job.kind !== 'weekly_summary' && !isTestRequest) {
-    return complete(ctx, job, { p_outcome: 'skipped', p_reason: 'unsupported_kind' });
-  }
 
-  const message = await summaryMessage(ctx, job, { sendIfEmpty: isTestRequest });
-  if (!message) return complete(ctx, job, { p_outcome: 'skipped', p_reason: 'empty_week' });
+  const built = await buildMessage(ctx, job);
+  if ('skip' in built) return complete(ctx, job, { p_outcome: 'skipped', p_reason: built.skip });
 
   const testMode = ctx.gate.mode === 'test';
   // Test requests are always labelled as tests, even when notifications are live.
-  const outgoing = testMode || isTestRequest ? markAsTest(message, job.destination) : message;
+  const outgoing = testMode || job.kind === 'test' ? markAsTest(built.message, job.destination) : built.message;
   const to = ctx.gate.mode === 'test' ? ctx.gate.redirectTo || job.destination : job.destination;
 
   const result = await ctx.provider.send(
@@ -200,18 +205,32 @@ async function processJob(ctx: Context, job: Job): Promise<string> {
   });
 }
 
+async function buildMessage(ctx: Context, job: Job): Promise<Built> {
+  switch (job.kind) {
+    case 'weekly_summary':
+    case 'test': {
+      // "Send test to me" is the coming week's summary, sent even if that week is empty.
+      const message = await summaryMessage(ctx, job, { sendIfEmpty: job.kind === 'test' });
+      return message ? { message } : { skip: 'empty_week' };
+    }
+    case 'day_before_reminder':
+      return reminderMessage(ctx, job);
+    default:
+      return { skip: 'unsupported_kind' };
+  }
+}
+
 async function loadSummaryItems(supabase: SupabaseClient, period: string): Promise<SummaryItem[]> {
   const { data, error } = await supabase.rpc('weekly_summary_items', { p_period_start: period });
   if (error) throw new Error(`summary content unavailable: ${error.message}`);
   return (data ?? []) as SummaryItem[];
 }
 
-// The job's message: the frozen payload on a retry, otherwise rendered now and frozen.
+// The summary for the job's week: the frozen payload on a retry, otherwise rendered now and frozen.
 // Returns null for an empty week that should not be sent.
 async function summaryMessage(ctx: Context, job: Job, options: { sendIfEmpty: boolean }): Promise<RenderedMessage | null> {
-  if (job.rendered_subject && job.rendered_html && job.rendered_text) {
-    return { subject: job.rendered_subject, html: job.rendered_html, text: job.rendered_text };
-  }
+  const stored = storedMessage(job);
+  if (stored) return stored;
 
   const period = job.period_start!;
   // Every subscriber gets the same content: load it once per week per run.
@@ -219,15 +238,46 @@ async function summaryMessage(ctx: Context, job: Job, options: { sendIfEmpty: bo
   const items = await ctx.summaries.get(period)!;
   if (items.length === 0 && !ctx.settings.weekly_summary_send_if_empty && !options.sendIfEmpty) return null;
 
-  const rendered = renderWeeklySummary({
+  return freeze(ctx, job, renderWeeklySummary({
     officeName: ctx.settings.office_name,
     officeTimezone: ctx.settings.timezone,
     periodStart: period,
     items,
-    appUrl: Deno.env.get('APP_URL') ?? 'http://localhost:3000',
+    appUrl: appUrl(),
     delayed: Date.now() - new Date(job.scheduled_for).getTime() > DELAYED_AFTER_MS,
-  });
+  }));
+}
 
+// A reminder is checked against the activity on every attempt (it may have been cancelled, moved
+// or had the person removed since the job was planned); the message is written at the first one.
+async function reminderMessage(ctx: Context, job: Job): Promise<Built> {
+  const { data, error } = await ctx.supabase
+    .rpc('reminder_details', { p_job_id: job.id })
+    .maybeSingle<ReminderDetails & { problem: string | null }>();
+  if (error || !data) throw new Error(`reminder details unavailable: ${error?.message ?? 'job not found'}`);
+  if (data.problem) return { skip: data.problem };
+
+  const stored = storedMessage(job);
+  if (stored) return { message: stored };
+  return {
+    message: await freeze(ctx, job, renderReminder({
+      officeName: ctx.settings.office_name,
+      officeTimezone: ctx.settings.timezone,
+      appUrl: appUrl(),
+      details: data,
+    })),
+  };
+}
+
+function storedMessage(job: Job): RenderedMessage | null {
+  return job.rendered_subject && job.rendered_html && job.rendered_text
+    ? { subject: job.rendered_subject, html: job.rendered_html, text: job.rendered_text }
+    : null;
+}
+
+// Stores the first render on the job and returns what is stored, so every retry sends exactly
+// the same payload (required for the provider's idempotency key).
+async function freeze(ctx: Context, job: Job, rendered: RenderedMessage): Promise<RenderedMessage> {
   const frozen = await ctx.supabase.rpc('freeze_notification_payload', {
     p_job_id: job.id,
     p_subject: rendered.subject,

@@ -7,8 +7,8 @@ select results_eq(
   $$ select schedule, active from cron.job where jobname = 'dispatch-notifications' $$,
   $$ values ('*/5 * * * *'::text, true) $$,
   'the dispatcher is scheduled every 5 minutes');
-select ok((select command from cron.job where jobname = 'dispatch-notifications') like '%plan_weekly_summaries%',
-          'each scheduled run plans in the database first');
+select ok((select command from cron.job where jobname = 'dispatch-notifications') like '%plan_notifications%',
+          'each scheduled run plans summaries and reminders in the database first');
 select results_eq(
   $$ select schedule from cron.job where jobname = 'clean-dispatch-history' $$,
   $$ values ('30 3 * * 0'::text) $$,

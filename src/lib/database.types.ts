@@ -296,11 +296,22 @@ isOneToOne: false
               "office_name": string,"timezone": string
             }[]
                            },
+"plan_notifications":
+{ Args: { "p_now"?: string }; Returns: number
+                           },
 "plan_weekly_summaries":
 { Args: { "p_now"?: string }; Returns: number
                            },
 "queue_test_notification":
 { Args: Record<PropertyKey, never>; Returns: string
+                           },
+"reminder_details":
+{ Args: { "p_job_id": string,"p_now"?: string }; Returns: {
+              "activity_date": string,"activity_id": string,"contact_email": string,"contact_name": string,"contact_phone": string,"description": string,"end_time": string,"location": string,"meeting_url": string,"others": (string)[],"preparation_notes": string,"problem": string,"recipient_is_staff": boolean,"recipient_name": string,"recipient_role": Database["public"]['Enums']["recipient_role"],"responsible_name": string,"start_time": string,"timezone": string,"title": string
+            }[]
+                           },
+"reminder_job_problem":
+{ Args: { "p_job": Omit<Database["public"]['Tables']["notification_jobs"]['Row'], Database["public"]['Tables']["notification_jobs"]['ComputedFields']>,"p_now"?: string }; Returns: string
                            },
 "request_dispatch":
 { Args: Record<PropertyKey, never>; Returns: number
@@ -313,6 +324,9 @@ isOneToOne: false
                            },
 "set_activity_status":
 { Args: { "p_activity_id": string,"p_expected_version"?: number,"p_reason"?: string,"p_status": Database["public"]['Enums']["activity_status"] }; Returns: number
+                           },
+"sync_reminders":
+{ Args: { "p_activity_id"?: string,"p_now"?: string }; Returns: number
                            },
 "weekly_summary_items":
 { Args: { "p_period_start": string }; Returns: {

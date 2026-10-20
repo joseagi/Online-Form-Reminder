@@ -1,4 +1,5 @@
 import { escapeHtml, multiline, safeHref } from './html.ts';
+import type { RenderedMessage } from './message.ts';
 
 // The Sunday office summary email. The same content goes to every subscriber, and it never
 // lists who receives it.
@@ -16,8 +17,6 @@ export type SummaryItem = {
   responsible_name: string | null;
   collaborator_names: string[] | null;
 };
-
-export type RenderedMessage = { subject: string; html: string; text: string };
 
 const dayFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
 const dayMonthFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -138,14 +137,4 @@ export function renderWeeklySummary(input: {
   ].filter(Boolean).join('\n\n');
 
   return { subject, html, text };
-}
-
-// Test-mode marking, applied at send time (the stored payload stays the real message).
-export function markAsTest(message: RenderedMessage, intendedRecipient: string): RenderedMessage {
-  const note = `TEST MESSAGE: in live mode this would have gone to ${intendedRecipient}.`;
-  return {
-    subject: `[TEST] ${message.subject}`,
-    html: `<p style="background:#fef3c7;padding:8px;font-family:Arial,sans-serif">${escapeHtml(note)}</p>${message.html}`,
-    text: `${note}\n\n${message.text}`,
-  };
 }

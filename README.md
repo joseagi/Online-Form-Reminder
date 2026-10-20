@@ -26,6 +26,10 @@ Internal web app for an office of up to about 20 staff:
 | 4a. Summary content, weekly planner and notification queue (database) | Done. 219 pgTAP tests passing |
 | 4b. Dispatcher Edge Function (template, log-only provider, test-mode gate) and Supabase Cron schedule | Done |
 | 4c. Admin: summary settings, recipients, preview, test send, notification log | Done. 237 pgTAP tests passing. **Phase 4 complete** |
+| 5a. Day-before reminders: planning, sync with activity changes, send-time checks, template (logged, not emailed) | Done. 268 pgTAP tests passing |
+| 5b. Resend email provider: idempotency keys, error handling, no-duplicate crash test | Planned |
+| 5c. Resend delivery webhooks (signed): delivered, bounced, complained | Planned |
+| 5d. Admin: retry and cancel, reminder settings, reminders on the activity page | Planned |
 
 ## Prerequisites (Windows)
 
@@ -86,8 +90,15 @@ The local stack leaves out Supabase Studio. The keys `db:start` prints are the s
 
 ### Scheduled notifications (local)
 
-- **Every 5 minutes:** Supabase Cron plans the weekly summaries in the database, then calls the `dispatch-notifications` Edge Function with a shared secret. This keeps working whether or not anyone has the website open.
-- **Nothing is delivered yet.** The dispatcher only has a log-only provider; Phase 5 adds the real email provider. Real recipients need **both** `notification_mode = live` (set by an admin) **and** `NOTIFICATIONS_LIVE=true` on the server (production only).
+- **Every 5 minutes:** Supabase Cron plans the weekly summaries and reminders in the database, then calls the `dispatch-notifications` Edge Function with a shared secret. This keeps working whether or not anyone has the website open.
+- **Reminders** go to each person listed on an activity who has email reminders on:
+  - **Timed activity:** 24 hours before the start.
+  - **All-day activity:** at 09:00 (office time) the day before.
+  - **Activity added late:** right away if at least 2 hours remain, otherwise not at all.
+  - Each person's reminder follows the activity as it changes: a new time, someone removed, cancelled or completed, reminders turned off. It is checked again just before sending.
+  - Changing only the details changes nothing, because the message is written when it's sent.
+  - The timings are settings (`reminder_lead`, `date_only_reminder_time`, `reminder_min_notice`). Stage 5d puts them on the Settings page.
+- **Nothing is delivered yet.** The dispatcher only has a log-only provider; stage 5b adds the real email provider. Real recipients need **both** `notification_mode = live` (set by an admin) **and** `NOTIFICATIONS_LIVE=true` on the server (production only).
 - **One-time setup:** run `npm run dispatch:setup`, then restart the stack (`npm run db:stop`, then `npm run db:start`). The restart lets the function read its new secret.
 - **To see what happened:** open **Admin → Notifications** (below). Underneath, it reads `public.notification_jobs` (each message, its rendered content and status) and `public.notification_logs` (every attempt, plus `run.started` / `run.finished` heartbeats).
 - **After adding a new Edge Function** (a new folder in `supabase/functions/`), restart the stack. The local Edge Runtime only finds functions when it starts; until then, calls return 404 "Function not found". Your data is kept.
@@ -100,7 +111,7 @@ Administrators see an **Admin** link in the header. Staff who open these address
 |---|---|
 | **Settings** (`/admin/settings`) | Office name, weekly summary on/off, Sunday send time, how late it may still go out, send-if-empty, notification mode (off / test / live), test address, sender name, reply-to |
 | **Weekly summary** (`/admin/summary`) | When the next summary goes out and to how many people, a preview of any week (the real template, via the `summary-preview` Edge Function), who receives it (staff and shared mailboxes), and **Send test to me** |
-| **Notifications** (`/admin/notifications`) | Messages with their status (latest due first, so planned summaries lead; up to 100, narrowed with the filters), the scheduler's last run (a warning if it's more than 15 minutes old), and per-message details: content as sent and every attempt |
+| **Notifications** (`/admin/notifications`) | Messages with their status: weekly summaries, test messages and reminders (named after their activity). **Waiting** lists the next due first; the other filters list the latest due first. Up to 100 at a time. Also the scheduler's last run (a warning if it's more than 15 minutes old), and per-message details: content as sent, every attempt, and a link to the reminder's activity |
 | **Staff** (`/admin/staff`) | Invite, change role, deactivate |
 
 - **Send test to me** queues one test-marked summary of the coming week to your own address and asks the dispatcher to run straight away. In test mode it goes to the test address instead; when notifications are off, the button says so and sends nothing. You can send up to 5 an hour.

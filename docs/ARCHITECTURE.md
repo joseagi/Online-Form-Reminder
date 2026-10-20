@@ -392,11 +392,11 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 | `configure_dispatch(url, secret)` | definer, service_role | Stores the dispatcher URL and secret in Vault. **Built in stage 4b** |
 | `request_dispatch()` | definer, service_role | Calls the dispatcher now (`pg_net`, URL and secret from Vault). Does nothing if dispatch isn't configured. **Built in stage 4c** |
 | `queue_test_notification()` | definer, admins only | "Send test to me": one test job to the caller, at most 5 an hour, then `request_dispatch()`. **Built in stage 4c** |
+| `sync_reminders(activity_id or null, p_now)` | definer, service_role | Creates, moves, revives or cancels the reminder jobs of one activity, or of all of them (null). Called at the end of each transaction that changes an activity or its people (deferred constraint triggers), and by the 5-minute plan. **Built in stage 5a** |
+| `plan_notifications(p_now)` | definer, service_role/owner | `plan_weekly_summaries` plus `sync_reminders(null)`. What Cron and the dispatcher run before claiming. **Built in stage 5a** |
+| `reminder_job_problem(job, p_now)` | definer, service_role | Why a reminder should no longer go out (`rescheduled`, `activity_cancelled`, `activity_completed`, `reminders_off`, `recipient_removed`, `recipient_inactive`, `expired`, `activity_missing`), or null. **Built in stage 5a** |
+| `reminder_details(job, p_now)` | definer, service_role | The current activity details for one reminder, the recipient's name and role, and `problem` (the check before every attempt). **Built in stage 5a** |
 | Error codes | | `42501` not found or not allowed · `40001` someone else saved first · `22023` invalid request · `23xxx` field rules |
-| `sync_activity_reminders(activity_id, p_now)` | definer | Called by triggers. Creates, revives or cancels reminder jobs |
-| `plan_notifications(p_now)` | definer, cron only | Weekly summary jobs plus a reconcile pass over upcoming reminders |
-| `weekly_summary_items(period_start)` | definer | Rows for `[Mon 00:00, next Mon 00:00)` local time |
-| `claim_notification_jobs(run_id, batch, p_now)`, `complete_notification_job(...)` | definer, **service_role only** | Lease, claim and record outcomes |
 
 ---
 
@@ -471,6 +471,15 @@ If a dispatcher dies mid-send, its lease expires. The job is re-claimed and rese
   - Content-only edits (title, notes): no job change. Content is rendered at send time.
 - Every 5 minutes the planner also re-syncs all upcoming activities. This self-heals after settings changes or anything missed.
 - **Re-validation at send time:** right before sending, the dispatcher re-checks that the activity is still `scheduled`, reminders are still on, `starts_at` equals the job's `basis_starts_at`, the recipient is still present and opted in, and now is before `expires_at`. Any failure marks the job `skipped`.
+- **Implemented in stage 5a** (migration `20261024090000_day_before_reminders.sql`):
+  - **Who gets one:** every person listed with `notify_email`, active, and with an email address. External contacts' copies have no link into the app, since they have no login.
+  - **The sync triggers are deferred constraint triggers** (`deferrable initially deferred`), so they run once the transaction's changes are final. `save_activity` changes the activity and then its people in several statements; an immediate trigger would plan, then cancel, reminders for someone removed in the same save.
+    - Profile changes (deactivation, a new email address) and settings changes are picked up by the 5-minute plan.
+    - pgTAP tests never commit, so they run the waiting triggers with `SET CONSTRAINTS ALL IMMEDIATE`.
+  - **"Late" is decided only when a job is created or revived:** at least `reminder_min_notice` must remain. A job that is already waiting keeps its place, and the deadline (`expires_at = starts_at`) stops it if it runs out of time.
+  - **`scheduled_for` stays the nominal reminder time.** For a late job, `run_after` is the moment it was planned.
+  - **The dispatcher** calls `reminder_details` on every attempt and skips with the `problem` as reason. It renders `_shared/reminder.ts` once, then freezes it like the summary.
+  - **Verified:** 31 pgTAP tests (test 11), unit tests for the template, and integration tests that save an activity through the API, so the commit-time sync runs for real, then send it through the dispatcher.
 
 ### 7.4 Duplicate prevention (layers)
 1. `dedupe_key UNIQUE`: one job per person per occurrence. Re-planning is an upsert.

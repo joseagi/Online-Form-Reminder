@@ -114,4 +114,12 @@ export const STATUS_REASON_LABELS: Record<string, string> = {
   retries_exhausted: 'Gave up after repeated temporary problems',
   rejected: 'Refused by the email provider',
   unsupported_kind: 'This kind of message is not supported yet',
+  // Reminders
+  rescheduled: 'The activity moved to a different time (a new reminder was planned)',
+  activity_cancelled: 'The activity was cancelled',
+  activity_completed: 'The activity was marked as completed',
+  activity_missing: 'The activity no longer exists',
+  reminders_off: 'Reminders were turned off for the activity',
+  recipient_removed: 'The person was removed from the activity, or turned off email reminders',
+  recipient_inactive: 'The person is no longer active, or has no email address',
 };

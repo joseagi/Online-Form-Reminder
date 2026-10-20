@@ -39,7 +39,17 @@ async function NotificationDetail({ params }: Pick<PageProps<'/admin/notificatio
         </Link>
       </p>
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">{describeJob(job)}</h1>
-      <p className="mb-6 text-zinc-600 dark:text-zinc-400">To {job.destination}</p>
+      <p className="mb-6 text-zinc-600 dark:text-zinc-400">
+        To {job.destination}
+        {job.activity_id && (
+          <>
+            {' · '}
+            <Link href={`/activities/${job.activity_id}`} className="underline">
+              Open the activity
+            </Link>
+          </>
+        )}
+      </p>
 
       <dl className="mb-8 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[12rem_1fr]">
         <Row label="Status">
