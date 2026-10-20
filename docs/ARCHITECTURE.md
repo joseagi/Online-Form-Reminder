@@ -365,6 +365,7 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 | `set_activity_recipients(activity_id, people jsonb)` | definer, checks `can_edit_activity` before any change | Writes only real changes. Exactly one responsible person, no duplicates, newly added people must be active. Lets a responsible person hand over. **Built in stage 3a** |
 | `set_activity_status(id, status, reason, expected_version)` | invoker | scheduled → completed or cancelled, and back to scheduled. Cancelling needs a reason. **Built in stage 3a** |
 | `office_info()` | definer, active staff only | Office name and time zone (the default for new activities). **Built in stage 3a** |
+| `activity_history(activity_id)` | definer, returns rows only if `can_view_activity` | The activity's own changes and its people's changes from `audit_logs`, oldest first, with who made them. Indexed by activity. **Built in stage 3c** |
 | Error codes | | `42501` not found or not allowed · `40001` someone else saved first · `22023` invalid request · `23xxx` field rules |
 | `sync_activity_reminders(activity_id, p_now)` | definer | Called by triggers. Creates, revives or cancels reminder jobs |
 | `plan_notifications(p_now)` | definer, cron only | Weekly summary jobs plus a reconcile pass over upcoming reminders |

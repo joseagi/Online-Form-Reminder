@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatTime, formatWhen } from './format';
+import { formatTime, formatTimestamp, formatWhen } from './format';
+
+describe('formatTimestamp', () => {
+  it('shows the moment in the given time zone', () => {
+    // 13:05 UTC is 14:05 in Lagos.
+    expect(formatTimestamp('2026-10-21T13:05:00Z', 'Africa/Lagos')).toMatch(/^21 Oct 2026,? 14:05$/);
+  });
+});
 
 describe('formatWhen', () => {
   it('shows a timed activity with its range', () => {

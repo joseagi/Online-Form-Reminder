@@ -48,7 +48,7 @@ test('staff create an activity with a colleague and a new outside contact', asyn
   await expect(page.getByText(/Tuesday,? 3 November 2026, 10:00–11:30/)).toBeVisible();
   await expect(page.getByText('Bring the Q3 figures.')).toBeVisible();
 
-  const person = (name: string) => page.getByRole('listitem').filter({ hasText: name });
+  const person = (name: string) => page.getByTestId('people').getByRole('listitem').filter({ hasText: name });
   await expect(person(sade.fullName)).toContainText('Responsible');
   await expect(person(tunde.fullName)).toContainText('Collaborator');
   await expect(person(outsider.name)).toContainText('Notify only');

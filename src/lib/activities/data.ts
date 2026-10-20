@@ -1,6 +1,8 @@
 import 'server-only';
 import type { ActivityFormValues, PersonEntry } from '@/lib/activities/schema';
+import { PAGE_SIZE, type ActivityFilters } from '@/lib/activities/filters';
 import { formatTime } from '@/lib/activities/format';
+import type { HistoryEntry } from '@/lib/activities/history';
 import type { ContactOption, StaffOption } from '@/lib/activities/types';
 import { createClient } from '@/lib/supabase/server';
 
@@ -60,6 +62,79 @@ export async function getActivity(id: string) {
 }
 
 export type Activity = NonNullable<Awaited<ReturnType<typeof getActivity>>>;
+
+// The register: activities the user may see, filtered and paged. `person_filter` is an inner
+// join used only for filtering by person (every activity has at least its responsible person).
+const LIST_COLUMNS = `
+  id, title, activity_date, start_time, end_time, location, status, visibility,
+  people:activity_recipients(role, profile:profiles(full_name)),
+  person_filter:activity_recipients!inner(profile_id)`;
+
+export type ActivityListItem = {
+  id: string;
+  title: string;
+  activityDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  restricted: boolean;
+  responsible: string | null;
+};
+
+export async function listActivities(
+  filters: ActivityFilters,
+  currentUserId: string,
+  pageSize = PAGE_SIZE,
+): Promise<{ rows: ActivityListItem[]; total: number; pageOutOfRange: boolean }> {
+  const supabase = await createClient();
+  let query = supabase.from('activities').select(LIST_COLUMNS, { count: 'exact' });
+
+  if (filters.q) query = query.textSearch('search', filters.q, { type: 'websearch', config: 'english' });
+  if (filters.from) query = query.gte('activity_date', filters.from);
+  if (filters.to) query = query.lte('activity_date', filters.to);
+  if (filters.status !== 'all') query = query.eq('status', filters.status);
+  const person = filters.person === 'me' ? currentUserId : filters.person;
+  if (person) query = query.eq('person_filter.profile_id', person);
+
+  const offset = (filters.page - 1) * pageSize;
+  const { data, error, count } = await query
+    .order('starts_at', { ascending: filters.order === 'asc' })
+    .order('id')
+    .range(offset, offset + pageSize - 1);
+
+  // PGRST103: the requested page is past the last result.
+  if (error?.code === 'PGRST103') return { rows: [], total: 0, pageOutOfRange: true };
+  if (error) throw new Error(`Could not load activities: ${error.message}`);
+
+  return {
+    rows: data.map((a) => ({
+      id: a.id,
+      title: a.title,
+      activityDate: a.activity_date,
+      startTime: a.start_time,
+      endTime: a.end_time,
+      location: a.location,
+      status: a.status,
+      restricted: a.visibility === 'restricted',
+      responsible: a.people.find((p) => p.role === 'responsible')?.profile?.full_name ?? null,
+    })),
+    total: count ?? 0,
+    pageOutOfRange: false,
+  };
+}
+
+// What happened to the activity, oldest first (empty if the user may not see it).
+export async function getActivityHistory(id: string): Promise<HistoryEntry[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('activity_history', { p_activity_id: id });
+  if (error) throw new Error(`Could not load the history: ${error.message}`);
+  return data.map((row) => ({
+    ...row,
+    old_data: row.old_data as Record<string, unknown> | null,
+    new_data: row.new_data as Record<string, unknown> | null,
+  }));
+}
 
 export async function canEditActivity(id: string): Promise<boolean> {
   const supabase = await createClient();

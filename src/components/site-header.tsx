@@ -25,6 +25,9 @@ async function UserMenu() {
 
   return (
     <nav className="flex items-center gap-4 text-sm">
+      <Link href="/activities" className="hover:underline">
+        Activities
+      </Link>
       {user.role === 'admin' && (
         <Link href="/admin/staff" className="hover:underline">
           Staff

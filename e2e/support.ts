@@ -41,22 +41,37 @@ export async function createUser(options: {
   return { id: data.user.id, email: options.email, password: options.password, fullName: options.fullName };
 }
 
-// Creates an activity through the same database function the app uses, signed in as `user`
-// (so permissions apply exactly as in the app). Returns its id.
+// A Supabase client signed in as `user`, so permissions apply exactly as in the app.
+async function clientFor(user: TestUser) {
+  const client = createClient(SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error } = await client.auth.signInWithPassword({ email: user.email, password: user.password });
+  if (error) throw new Error(`sign-in failed: ${error.message}`);
+  return client;
+}
+
+// Creates an activity through the same database function the app uses. Returns its id.
 export async function createActivityAs(
   user: TestUser,
   activity: Record<string, unknown>,
   people: Record<string, unknown>[],
 ): Promise<string> {
-  const client = createClient(SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { error: signInError } = await client.auth.signInWithPassword({ email: user.email, password: user.password });
-  if (signInError) throw new Error(`sign-in failed: ${signInError.message}`);
-
+  const client = await clientFor(user);
   const { data, error } = await client.rpc('save_activity', { p_activity: activity, p_recipients: people });
   if (error || !data) throw new Error(`save_activity failed: ${error?.message}`);
   return data;
+}
+
+export async function setActivityStatusAs(
+  user: TestUser,
+  activityId: string,
+  status: 'scheduled' | 'completed' | 'cancelled',
+  reason?: string,
+) {
+  const client = await clientFor(user);
+  const { error } = await client.rpc('set_activity_status', { p_activity_id: activityId, p_status: status, p_reason: reason });
+  if (error) throw new Error(`set_activity_status failed: ${error.message}`);
 }
 
 export async function signIn(page: Page, email: string, password: string) {

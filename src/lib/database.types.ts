@@ -213,7 +213,12 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "can_edit_activity":
+            "activity_history":
+{ Args: { "p_activity_id": string }; Returns: {
+              "actor_name": string,"changed_fields": (string)[],"entity": string,"id": number,"new_data": Json,"occurred_at": string,"old_data": Json,"operation": string,"person_name": string
+            }[]
+                           },
+"can_edit_activity":
 { Args: { "p_activity_id": string }; Returns: boolean
                            },
 "can_view_activity":

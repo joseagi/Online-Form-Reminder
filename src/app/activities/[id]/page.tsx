@@ -4,8 +4,9 @@ import { notFound } from 'next/navigation';
 import { Suspense, type ReactNode } from 'react';
 import { Alert } from '@/components/ui';
 import { requireUser } from '@/lib/auth';
-import { canEditActivity, getActivity } from '@/lib/activities/data';
-import { formatWhen } from '@/lib/activities/format';
+import { canEditActivity, getActivity, getActivityHistory } from '@/lib/activities/data';
+import { formatTimestamp, formatWhen } from '@/lib/activities/format';
+import { describeChange, type HistoryEntry } from '@/lib/activities/history';
 import { ROLE_LABELS, isUuid } from '@/lib/activities/schema';
 import { firstParam } from '@/lib/forms';
 
@@ -28,12 +29,17 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
   const { id } = await params;
   if (!isUuid(id)) notFound();
 
-  const [activity, canEdit] = await Promise.all([getActivity(id), canEditActivity(id)]);
+  const [activity, canEdit, history] = await Promise.all([getActivity(id), canEditActivity(id), getActivityHistory(id)]);
   if (!activity) notFound();
   const saved = firstParam((await searchParams).notice) === 'saved';
 
   return (
     <article className="space-y-8">
+      <p className="text-sm">
+        <Link href="/activities" className="text-zinc-600 hover:underline dark:text-zinc-400">
+          ← All activities
+        </Link>
+      </p>
       {saved && <Alert tone="success">Activity saved.</Alert>}
 
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -89,7 +95,7 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
 
       <section>
         <h2 className="mb-2 text-lg font-medium">People</h2>
-        <ul className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <ul data-testid="people" className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
           {activity.people.map((person) => (
             <li key={person.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
               <span>
@@ -106,7 +112,32 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
           ))}
         </ul>
       </section>
+
+      <History entries={history} timeZone={activity.timezone} />
     </article>
+  );
+}
+
+function History({ entries, timeZone }: { entries: HistoryEntry[]; timeZone: string }) {
+  const lines = entries
+    .map((entry) => ({ entry, text: describeChange(entry) }))
+    .filter((line): line is { entry: HistoryEntry; text: string } => line.text !== null);
+  if (lines.length === 0) return null;
+
+  // Newest first.
+  return (
+    <section>
+      <h2 className="mb-2 text-lg font-medium">History</h2>
+      <ol className="space-y-2 border-l border-zinc-200 pl-4 text-sm dark:border-zinc-800" data-testid="history">
+        {lines.reverse().map(({ entry, text }) => (
+          <li key={entry.id}>
+            <span className="text-zinc-500">{formatTimestamp(entry.occurred_at, timeZone)}</span>
+            {' · '}
+            <span className="font-medium">{entry.actor_name}</span> {text}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

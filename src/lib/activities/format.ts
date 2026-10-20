@@ -18,6 +18,18 @@ export function formatTime(time: string | null): string {
   return time ? time.slice(0, 5) : '';
 }
 
+// A moment (e.g. when a change was made) in the given time zone: "21 Oct 2026, 14:05".
+export function formatTimestamp(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  }).format(new Date(iso));
+}
+
 export function formatWhen(activity: { activity_date: string; start_time: string | null; end_time: string | null }): string {
   const date = formatDate(activity.activity_date);
   if (!activity.start_time) return `${date} (all day)`;
