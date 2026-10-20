@@ -6,6 +6,13 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    ignore:
+      # Stay on TypeScript 5.x until Next.js and the lint tooling support 7 (docs/ARCHITECTURE.md, AD-01).
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Node type definitions follow the Node.js version the app runs on (24.x, see .nvmrc).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
