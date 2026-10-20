@@ -361,8 +361,11 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 | `is_admin()`, `is_active_staff()`, `can_view_activity(id)`, `can_edit_activity(id)` | definer, `stable`, `search_path = ''` | Policy helpers |
 | `handle_new_user()` (trigger on `auth.users`) | definer | Creates a profile from invite metadata |
 | `activities_derive_times()` (trigger) | invoker | Validates timezone, derives `starts_at`/`ends_at`, bumps `version` |
-| `save_activity(payload jsonb, expected_version int)` | **invoker** (RLS applies) | Saves an activity and its recipients atomically, with a stale-edit check |
-| `set_activity_status(id, status, reason)` | invoker | Complete or cancel, with a reason |
+| `save_activity(activity jsonb, people jsonb, expected_version int)` | **invoker** (RLS applies) | Creates or edits an activity and its people atomically, with a stale-edit check. **Built in stage 3a** |
+| `set_activity_recipients(activity_id, people jsonb)` | definer, checks `can_edit_activity` before any change | Writes only real changes. Exactly one responsible person, no duplicates, newly added people must be active. Lets a responsible person hand over. **Built in stage 3a** |
+| `set_activity_status(id, status, reason, expected_version)` | invoker | scheduled → completed or cancelled, and back to scheduled. Cancelling needs a reason. **Built in stage 3a** |
+| `office_info()` | definer, active staff only | Office name and time zone (the default for new activities). **Built in stage 3a** |
+| Error codes | | `42501` not found or not allowed · `40001` someone else saved first · `22023` invalid request · `23xxx` field rules |
 | `sync_activity_reminders(activity_id, p_now)` | definer | Called by triggers. Creates, revives or cancels reminder jobs |
 | `plan_notifications(p_now)` | definer, cron only | Weekly summary jobs plus a reconcile pass over upcoming reminders |
 | `weekly_summary_items(period_start)` | definer | Rows for `[Mon 00:00, next Mon 00:00)` local time |

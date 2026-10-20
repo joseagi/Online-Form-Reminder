@@ -19,7 +19,9 @@ Internal web app for an office of up to about 20 staff:
 | 2c. RLS access policies + permission tests | Done. 128 pgTAP tests passing |
 | 2d. Sign-in (invite-only), password reset, protected pages, staff invitations | Done |
 | 2e. Continuous integration (GitHub Actions) + Dependabot | Done |
-| 3. Activities: form, register, search, calendar, status changes | Next |
+| 3a. Activity database operations (save with people, status changes, office info) | Done. 171 pgTAP tests passing |
+| 3b. Activity form (create and edit) | Next |
+| 3c–3d. Register, search, detail and history; status changes in the UI; calendar | Planned |
 
 ## Prerequisites (Windows)
 

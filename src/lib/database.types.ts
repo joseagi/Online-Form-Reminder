@@ -230,6 +230,20 @@ isOneToOne: false
                            },
 "is_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean
+                           },
+"office_info":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "office_name": string,"timezone": string
+            }[]
+                           },
+"save_activity":
+{ Args: { "p_activity": Json,"p_expected_version"?: number,"p_recipients": Json }; Returns: string
+                           },
+"set_activity_recipients":
+{ Args: { "p_activity_id": string,"p_recipients": Json }; Returns: undefined
+                           },
+"set_activity_status":
+{ Args: { "p_activity_id": string,"p_expected_version"?: number,"p_reason"?: string,"p_status": Database["public"]['Enums']["activity_status"] }; Returns: number
                            }
           }
           Enums: {
