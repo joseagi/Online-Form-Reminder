@@ -16,6 +16,7 @@
     "db:start": "supabase start -x studio,edge-runtime",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
+    "db:migrate": "supabase migration up --local",
     "db:test": "supabase test db",
     "db:lint": "supabase db lint --local --level warning --fail-on warning",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",

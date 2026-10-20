@@ -1,10 +1,12 @@
+import { expect, type Page } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 
 // Test helpers that act on the LOCAL Supabase stack only.
 
 const MAILPIT_URL = 'http://127.0.0.1:54324';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 
-const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, {
+const admin = createClient(SUPABASE_URL, process.env.SUPABASE_SECRET_KEY!, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
@@ -13,13 +15,15 @@ export function uniqueEmail(label: string) {
   return `e2e-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
 }
 
+export type TestUser = { id: string; email: string; password: string; fullName: string };
+
 export async function createUser(options: {
   email: string;
   password: string;
   fullName: string;
   role?: 'admin' | 'staff';
   active?: boolean;
-}) {
+}): Promise<TestUser> {
   const { data, error } = await admin.auth.admin.createUser({
     email: options.email,
     password: options.password,
@@ -33,6 +37,37 @@ export async function createUser(options: {
     .update({ role: options.role ?? 'staff', is_active: options.active ?? true })
     .eq('id', data.user.id);
   if (updateError) throw new Error(`profile update failed: ${updateError.message}`);
+
+  return { id: data.user.id, email: options.email, password: options.password, fullName: options.fullName };
+}
+
+// Creates an activity through the same database function the app uses, signed in as `user`
+// (so permissions apply exactly as in the app). Returns its id.
+export async function createActivityAs(
+  user: TestUser,
+  activity: Record<string, unknown>,
+  people: Record<string, unknown>[],
+): Promise<string> {
+  const client = createClient(SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error: signInError } = await client.auth.signInWithPassword({ email: user.email, password: user.password });
+  if (signInError) throw new Error(`sign-in failed: ${signInError.message}`);
+
+  const { data, error } = await client.rpc('save_activity', { p_activity: activity, p_recipients: people });
+  if (error || !data) throw new Error(`save_activity failed: ${error?.message}`);
+  return data;
+}
+
+export async function signIn(page: Page, email: string, password: string) {
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+}
+
+export async function signOut(page: Page) {
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page).toHaveURL(/\/login\?notice=signed-out$/);
 }
 
 // The /auth/confirm link from the newest email sent to `to`, waiting for it to arrive.

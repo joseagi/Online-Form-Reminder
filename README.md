@@ -20,8 +20,9 @@ Internal web app for an office of up to about 20 staff:
 | 2d. Sign-in (invite-only), password reset, protected pages, staff invitations | Done |
 | 2e. Continuous integration (GitHub Actions) + Dependabot | Done |
 | 3a. Activity database operations (save with people, status changes, office info) | Done. 171 pgTAP tests passing |
-| 3b. Activity form (create and edit) | Next |
-| 3c–3d. Register, search, detail and history; status changes in the UI; calendar | Planned |
+| 3b. Activity form (create and edit), basic detail page | Done |
+| 3c. Register: list, search, filters, detail with change history | Next |
+| 3d. Status changes in the UI; calendar | Planned |
 
 ## Prerequisites (Windows)
 
@@ -70,7 +71,8 @@ Locally, no email leaves your machine: invitations and password-reset emails are
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` after a schema change |
 | `npm run db:start` | Start the local Supabase stack (Docker Desktop must be running). Prints the local URL and keys |
 | `npm run db:stop` | Stop the local stack |
-| `npm run db:reset` | Rebuild the local database from `supabase/migrations/` |
+| `npm run db:migrate` | Apply new migrations to the local database, **keeping existing data** (accounts, activities) |
+| `npm run db:reset` | Rebuild the local database from scratch. **Erases all local data, including accounts**; afterwards run `npm run admin:create` again |
 | `npm run db:test` | Run the pgTAP database tests in `supabase/tests/database/` |
 | `npm run db:lint` | Check database functions for errors |
 
@@ -78,7 +80,7 @@ The local stack leaves out Supabase Studio and the Edge Functions runtime until 
 
 ### Database changes
 
-Every schema change is a new SQL file in `supabase/migrations/`; applied migrations are never edited. After adding one, run `npm run db:reset` and `npm run db:test`.
+Every schema change is a new SQL file in `supabase/migrations/`; applied migrations are never edited. After adding one, run `npm run db:migrate` (keeps your local data) and `npm run db:test`. CI always rebuilds from scratch, so every migration is also tested that way on each push.
 
 ### Troubleshooting: Docker image downloads fail
 

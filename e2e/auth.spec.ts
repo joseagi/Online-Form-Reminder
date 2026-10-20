@@ -1,20 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createUser, emailLinkFor, uniqueEmail } from './support';
+import { createUser, emailLinkFor, signIn, signOut, uniqueEmail } from './support';
 
 // Form messages. (Scoped to the form: Next.js also renders an empty role="alert" route announcer.)
 const formAlert = (page: Page) => page.locator('form').getByRole('alert');
 const formStatus = (page: Page) => page.locator('form').getByRole('status');
-
-async function signIn(page: Page, email: string, password: string) {
-  await page.getByLabel('Email', { exact: true }).fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-}
-
-async function signOut(page: Page) {
-  await page.getByRole('button', { name: 'Sign out' }).click();
-  await expect(page).toHaveURL(/\/login\?notice=signed-out$/);
-}
 
 async function chooseNewPassword(page: Page, password: string) {
   await page.getByLabel('New password', { exact: true }).fill(password);
