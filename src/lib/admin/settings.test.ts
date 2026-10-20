@@ -1,0 +1,86 @@
+import { describe, expect, it } from 'vitest';
+import { intervalHours, nextSummary, settingsSchema, toSettingsForm, toSettingsUpdate, type SettingsForm } from './settings';
+
+const valid: SettingsForm = {
+  officeName: 'Lagos Office',
+  summaryEnabled: true,
+  summarySendTime: '17:00',
+  summarySendIfEmpty: false,
+  summaryLateCutoffHours: 16,
+  notificationMode: 'test',
+  testRedirectEmail: '',
+  emailFromName: 'Office Reminders',
+  emailReplyTo: '',
+};
+
+describe('settingsSchema', () => {
+  it('accepts sensible settings', () => {
+    expect(settingsSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it.each([
+    ['a missing send time', { summarySendTime: '' }, 'Choose a send time.'],
+    ['a cutoff over a day', { summaryLateCutoffHours: 30 }, 'Use 0 to 24 hours.'],
+    ['an invalid test address', { testRedirectEmail: 'qa@' }, 'Enter a valid email address.'],
+    ['a sender name with a line break', { emailFromName: 'Office\nBcc: x@evil.example' }, 'The sender name cannot contain line breaks, <, > or quotes.'],
+    ['an unknown mode', { notificationMode: 'loud' }, undefined],
+  ])('rejects %s', (_label, overrides, message) => {
+    const result = settingsSchema.safeParse({ ...valid, ...overrides });
+    expect(result.success).toBe(false);
+    if (!result.success && message) expect(result.error.issues[0].message).toBe(message);
+  });
+});
+
+describe('converting to and from the database', () => {
+  it.each([
+    ['16:00:00', 16],
+    ['00:00:00', 0],
+    ['1 day', 24],
+    ['24:00:00', 24],
+  ])('reads the interval %s as %i hours', (value, hours) => {
+    expect(intervalHours(value)).toBe(hours);
+  });
+
+  it('round-trips the form', () => {
+    const row = {
+      office_name: 'Lagos Office',
+      timezone: 'Africa/Lagos',
+      weekly_summary_enabled: true,
+      weekly_summary_send_time: '18:30:00',
+      weekly_summary_send_if_empty: true,
+      weekly_summary_late_cutoff: '12:00:00',
+      notification_mode: 'live' as const,
+      test_redirect_email: null,
+      email_from_name: 'Office Reminders',
+      email_reply_to: 'office@example.com',
+    };
+    const form = toSettingsForm(row);
+    expect(form).toMatchObject({ summarySendTime: '18:30', summaryLateCutoffHours: 12, testRedirectEmail: '' });
+    expect(toSettingsUpdate(settingsSchema.parse(form))).toMatchObject({
+      weekly_summary_send_time: '18:30',
+      weekly_summary_late_cutoff: '12 hours',
+      test_redirect_email: null,
+      email_reply_to: 'office@example.com',
+    });
+  });
+});
+
+describe('nextSummary (office time, Africa/Lagos = UTC+1)', () => {
+  const at = (iso: string) => nextSummary({ now: new Date(iso), timeZone: 'Africa/Lagos', sendTime: '17:00' });
+
+  it('on a Wednesday, it is the coming Sunday, covering the week after', () => {
+    expect(at('2026-10-21T10:00:00Z')).toEqual({ sendDate: '2026-10-25', periodStart: '2026-10-26' });
+  });
+
+  it('on Sunday before the send time, it is today', () => {
+    expect(at('2026-10-25T15:59:00Z')).toEqual({ sendDate: '2026-10-25', periodStart: '2026-10-26' });
+  });
+
+  it('on Sunday after the send time, it is next Sunday', () => {
+    expect(at('2026-10-25T16:00:00Z')).toEqual({ sendDate: '2026-11-01', periodStart: '2026-11-02' });
+  });
+
+  it('uses the office date, not UTC: Saturday 23:30 UTC is already Sunday in Lagos', () => {
+    expect(at('2026-10-24T23:30:00Z')).toEqual({ sendDate: '2026-10-25', periodStart: '2026-10-26' });
+  });
+});

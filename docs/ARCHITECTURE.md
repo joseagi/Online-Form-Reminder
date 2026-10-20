@@ -106,6 +106,11 @@ Assumptions that need your confirmation are listed in §11.
   - `supabase/functions/dispatch-notifications`. Pure modules live in `supabase/functions/_shared`: the template, the HTML escaping, the mode gate, the provider interface with a `log` provider, and the secret comparison. Vitest tests them; Deno type-checks them (`npm run functions:check`).
   - Migration `20261022100000_dispatch_schedule.sql` enables `pg_cron` and `pg_net`, adds `configure_dispatch(url, secret)` (Vault, service role only), and schedules `dispatch-notifications` (`*/5 * * * *`: plan, then call the function with a 60-second timeout) and `clean-dispatch-history` (weekly).
   - **Verified locally:** a Cron-triggered run returned HTTP 200 through the Edge Runtime and logged its heartbeat, with no one calling it.
+- **Changed in stage 4c** (migration `20261023090000_admin_test_send.sql`):
+  - The Vault lookup and HTTP call moved into `request_dispatch()` (service role only), so Cron and "Send test to me" share them. The Cron job is now `plan_weekly_summaries(); request_dispatch();`.
+  - `queue_test_notification()` (admins only) queues one `test` job to the caller's own address. It is limited to 5 an hour per administrator, expires after 1 hour, and asks for an immediate dispatch run instead of waiting up to 5 minutes.
+  - The dispatcher renders a test job as the coming week's summary, always marked as a test, even if that week is empty.
+  - The server action refuses when notifications are "off": the dispatcher would only skip the job.
 - **Production setup (Phase 7):**
   - set `DISPATCH_SECRET` and `APP_URL` with `supabase secrets set`
   - call `configure_dispatch('https://<project>.supabase.co/functions/v1/dispatch-notifications', '<same secret>')` once
@@ -133,6 +138,10 @@ Assumptions that need your confirmation are listed in §11.
 
 ### AD-10 Email templates live only in the Edge Function
 - The admin "preview summary" calls the function in render-only mode and shows the HTML in a sandboxed iframe. There is one template source of truth and no drift between preview and the real email.
+- **Implemented in stage 4c** as a separate `summary-preview` Edge Function that imports the same `_shared/weekly-summary.ts` as the dispatcher.
+  - It keeps `verify_jwt` on and checks `is_admin()` with the caller's own token: 401 without a token, 403 for staff, 400 if the date is not a Monday.
+  - It never sends anything and has no access to the dispatch secret.
+  - If it fails, the summary page shows a warning instead of the preview, and the rest of the page keeps working.
 - All user-supplied text is HTML-escaped. Meeting links must be `http(s)`.
 
 ### AD-11 Built for deterministic testing
@@ -380,6 +389,9 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 | `freeze_notification_payload(job, subject, html, text)` | definer, service_role | Stores the first render and returns what is stored, so retries send an identical payload. **Built in stage 4a** |
 | `complete_notification_job(job, run, outcome, …)` | definer, service_role | sent / retry (waits 1 m, 5 m, 15 m, 1 h, 3 h, capped by deadline and attempts) / failed / skipped, logged in `notification_logs`. **Built in stage 4a** |
 | `log_dispatch_run(run, event, details)` | definer, service_role | Run-level heartbeat entries. **Built in stage 4a** |
+| `configure_dispatch(url, secret)` | definer, service_role | Stores the dispatcher URL and secret in Vault. **Built in stage 4b** |
+| `request_dispatch()` | definer, service_role | Calls the dispatcher now (`pg_net`, URL and secret from Vault). Does nothing if dispatch isn't configured. **Built in stage 4c** |
+| `queue_test_notification()` | definer, admins only | "Send test to me": one test job to the caller, at most 5 an hour, then `request_dispatch()`. **Built in stage 4c** |
 | Error codes | | `42501` not found or not allowed · `40001` someone else saved first · `22023` invalid request · `23xxx` field rules |
 | `sync_activity_reminders(activity_id, p_now)` | definer | Called by triggers. Creates, revives or cancels reminder jobs |
 | `plan_notifications(p_now)` | definer, cron only | Weekly summary jobs plus a reconcile pass over upcoming reminders |

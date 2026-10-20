@@ -25,7 +25,7 @@ Internal web app for an office of up to about 20 staff:
 | 3d. Complete / cancel / reopen in the UI; month and week calendar | Done. **Phase 3 complete** |
 | 4a. Summary content, weekly planner and notification queue (database) | Done. 219 pgTAP tests passing |
 | 4b. Dispatcher Edge Function (template, log-only provider, test-mode gate) and Supabase Cron schedule | Done |
-| 4c. Admin: summary settings, recipients, preview, test send, notification log | Planned |
+| 4c. Admin: summary settings, recipients, preview, test send, notification log | Done. 237 pgTAP tests passing. **Phase 4 complete** |
 
 ## Prerequisites (Windows)
 
@@ -69,7 +69,7 @@ Locally, no email leaves your machine: invitations and password-reset emails are
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate Next.js route types, then `tsc --noEmit` |
 | `npm test` | Unit tests (Vitest: `src/**/*.test.ts` and the Edge Functions' pure modules) |
-| `npm run test:integration` | Tests against the running local stack, e.g. the dispatcher Edge Function (`tests/integration/`) |
+| `npm run test:integration` | Tests against the running local stack: the `dispatch-notifications` and `summary-preview` Edge Functions (`tests/integration/`). Needs `npm run dispatch:setup` once |
 | `npm run functions:check` | Type-check the Edge Functions with Deno |
 | `npm run dispatch:setup` | Local only: give the dispatcher a secret (`supabase/functions/.env`) and tell the database where to call it, so Supabase Cron runs it every 5 minutes |
 | `npm run e2e` | Browser tests (Playwright, `e2e/`). Needs the local stack running; builds and starts the app on port 3000 unless it's already running. First time only: `npx playwright install chromium`. Or use the Edge already on Windows: `$env:PLAYWRIGHT_CHANNEL='msedge'; npm run e2e`. The tests leave `e2e-…@example.com` users in the local database; `npm run db:reset` clears them |
@@ -89,7 +89,22 @@ The local stack leaves out Supabase Studio. The keys `db:start` prints are the s
 - **Every 5 minutes:** Supabase Cron plans the weekly summaries in the database, then calls the `dispatch-notifications` Edge Function with a shared secret. This keeps working whether or not anyone has the website open.
 - **Nothing is delivered yet.** The dispatcher only has a log-only provider; Phase 5 adds the real email provider. Real recipients need **both** `notification_mode = live` (set by an admin) **and** `NOTIFICATIONS_LIVE=true` on the server (production only).
 - **One-time setup:** run `npm run dispatch:setup`, then restart the stack (`npm run db:stop`, then `npm run db:start`). The restart lets the function read its new secret.
-- **To see what happened:** read `public.notification_jobs` (each message, its rendered content and status) and `public.notification_logs` (every attempt, plus `run.started` / `run.finished` heartbeats).
+- **To see what happened:** open **Admin → Notifications** (below). Underneath, it reads `public.notification_jobs` (each message, its rendered content and status) and `public.notification_logs` (every attempt, plus `run.started` / `run.finished` heartbeats).
+- **After adding a new Edge Function** (a new folder in `supabase/functions/`), restart the stack. The local Edge Runtime only finds functions when it starts; until then, calls return 404 "Function not found". Your data is kept.
+
+### Admin screens
+
+Administrators see an **Admin** link in the header. Staff who open these addresses get "page not found".
+
+| Screen | What it's for |
+|---|---|
+| **Settings** (`/admin/settings`) | Office name, weekly summary on/off, Sunday send time, how late it may still go out, send-if-empty, notification mode (off / test / live), test address, sender name, reply-to |
+| **Weekly summary** (`/admin/summary`) | When the next summary goes out and to how many people, a preview of any week (the real template, via the `summary-preview` Edge Function), who receives it (staff and shared mailboxes), and **Send test to me** |
+| **Notifications** (`/admin/notifications`) | Messages with their status (latest due first, so planned summaries lead; up to 100, narrowed with the filters), the scheduler's last run (a warning if it's more than 15 minutes old), and per-message details: content as sent and every attempt |
+| **Staff** (`/admin/staff`) | Invite, change role, deactivate |
+
+- **Send test to me** queues one test-marked summary of the coming week to your own address and asks the dispatcher to run straight away. In test mode it goes to the test address instead; when notifications are off, the button says so and sends nothing. You can send up to 5 an hour.
+- **Nothing reaches a real inbox** until Phase 5 adds the email provider. Until then, a sent message shows as "Logged only (test)".
 
 ### Database changes
 
@@ -110,8 +125,8 @@ npm run db:start
 
 | Job | Checks |
 |---|---|
-| Lint, types, unit tests, build | `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` |
-| Database and browser tests | Starts a fresh local Supabase in the runner (all migrations from scratch), then `npm run db:test`, `npm run db:lint` and `npm run e2e` |
+| Lint, types, unit tests, build | `npm run lint`, `npm run typecheck`, `npm run functions:check`, `npm test`, `npm run build` |
+| Database and browser tests | Starts a fresh local Supabase in the runner (all migrations from scratch), then `npm run db:test`, `npm run db:lint`, `npm run dispatch:setup`, `npm run test:integration` and `npm run e2e` |
 
 - **No secrets:** CI uses only the throwaway local stack inside the runner, and never touches a hosted project.
 - **Failed browser tests** upload the Playwright report as a run artifact (kept 7 days).

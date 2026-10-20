@@ -74,6 +74,21 @@ export async function setActivityStatusAs(
   if (error) throw new Error(`set_activity_status failed: ${error.message}`);
 }
 
+// The office settings are shared by the whole local database: save them before a test changes
+// them, and put them back afterwards.
+export async function readSettings(): Promise<Record<string, unknown>> {
+  const { data, error } = await admin.from('system_settings').select('*').single();
+  if (error) throw new Error(`reading settings failed: ${error.message}`);
+  const editable: Record<string, unknown> = { ...data };
+  for (const key of ['id', 'updated_at', 'updated_by']) delete editable[key];
+  return editable;
+}
+
+export async function updateSettings(values: Record<string, unknown>) {
+  const { error } = await admin.from('system_settings').update(values).eq('id', true);
+  if (error) throw new Error(`updating settings failed: ${error.message}`);
+}
+
 export async function signIn(page: Page, email: string, password: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);

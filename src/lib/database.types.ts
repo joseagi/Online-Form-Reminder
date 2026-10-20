@@ -268,6 +268,9 @@ isOneToOne: false
 "complete_notification_job":
 { Args: { "p_error_code"?: string,"p_error_message"?: string,"p_http_status"?: number,"p_job_id": string,"p_now"?: string,"p_outcome": string,"p_provider"?: string,"p_provider_message_id"?: string,"p_reason"?: string,"p_retry_after"?: string,"p_run_id": string,"p_send_mode"?: Database["public"]['Enums']["notification_mode"] }; Returns: Database["public"]['Enums']["job_status"]
                            },
+"configure_dispatch":
+{ Args: { "p_secret": string,"p_url": string }; Returns: undefined
+                           },
 "freeze_notification_payload":
 { Args: { "p_html": string,"p_job_id": string,"p_subject": string,"p_text": string }; Returns: {
               "body_text": string,"html": string,"subject": string
@@ -295,6 +298,12 @@ isOneToOne: false
                            },
 "plan_weekly_summaries":
 { Args: { "p_now"?: string }; Returns: number
+                           },
+"queue_test_notification":
+{ Args: Record<PropertyKey, never>; Returns: string
+                           },
+"request_dispatch":
+{ Args: Record<PropertyKey, never>; Returns: number
                            },
 "save_activity":
 { Args: { "p_activity": Json,"p_expected_version"?: number,"p_recipients": Json }; Returns: string

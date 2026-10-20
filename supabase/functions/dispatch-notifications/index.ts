@@ -34,7 +34,17 @@ type Settings = {
   dispatch_batch_size: number;
 };
 
-type Counts = { planned: number; claimed: number; sent: number; retrying: number; failed: number; skipped: number };
+type Counts = {
+  planned: number;
+  claimed: number;
+  sent: number;
+  retrying: number;
+  failed: number;
+  skipped: number;
+  // Shown to administrators: which mode this run used, and why if it wasn't the one selected.
+  mode?: 'off' | 'test' | 'live';
+  warning?: string | null;
+};
 
 // A summary that goes out more than this long after its scheduled time is marked as delayed.
 const DELAYED_AFTER_MS = 30 * 60 * 1000;
@@ -101,7 +111,9 @@ async function dispatch(supabase: SupabaseClient, runId: string, counts: Counts)
     hasRealProvider: realProvider !== null,
     testRedirectEmail: settings.test_redirect_email,
   });
-  if (gate.action === 'send' && gate.mode === 'test' && gate.warning) console.warn(gate.warning);
+  counts.mode = gate.action === 'skip' ? 'off' : gate.mode;
+  counts.warning = gate.action === 'send' && gate.mode === 'test' ? gate.warning : null;
+  if (counts.warning) console.warn(counts.warning);
 
   const claimed = await supabase.rpc('claim_notification_jobs', { p_run_id: runId, p_limit: settings.dispatch_batch_size });
   if (claimed.error) throw new Error(`claiming failed: ${claimed.error.message}`);
@@ -145,14 +157,19 @@ async function complete(ctx: Context, job: Job, outcome: Record<string, unknown>
 
 async function processJob(ctx: Context, job: Job): Promise<string> {
   if (ctx.gate.action === 'skip') return complete(ctx, job, { p_outcome: 'skipped', p_reason: ctx.gate.reason });
-  if (job.kind !== 'weekly_summary') return complete(ctx, job, { p_outcome: 'skipped', p_reason: 'unsupported_kind' });
+  // "Send test to me": the coming week's summary, sent to the administrator who asked for it.
+  const isTestRequest = job.kind === 'test';
+  if (job.kind !== 'weekly_summary' && !isTestRequest) {
+    return complete(ctx, job, { p_outcome: 'skipped', p_reason: 'unsupported_kind' });
+  }
 
-  const message = await summaryMessage(ctx, job);
+  const message = await summaryMessage(ctx, job, { sendIfEmpty: isTestRequest });
   if (!message) return complete(ctx, job, { p_outcome: 'skipped', p_reason: 'empty_week' });
 
   const testMode = ctx.gate.mode === 'test';
-  const outgoing = testMode ? markAsTest(message, job.destination) : message;
-  const to = testMode ? (ctx.gate.action === 'send' && ctx.gate.mode === 'test' && ctx.gate.redirectTo) || job.destination : job.destination;
+  // Test requests are always labelled as tests, even when notifications are live.
+  const outgoing = testMode || isTestRequest ? markAsTest(message, job.destination) : message;
+  const to = ctx.gate.mode === 'test' ? ctx.gate.redirectTo || job.destination : job.destination;
 
   const result = await ctx.provider.send(
     {
@@ -191,7 +208,7 @@ async function loadSummaryItems(supabase: SupabaseClient, period: string): Promi
 
 // The job's message: the frozen payload on a retry, otherwise rendered now and frozen.
 // Returns null for an empty week that should not be sent.
-async function summaryMessage(ctx: Context, job: Job): Promise<RenderedMessage | null> {
+async function summaryMessage(ctx: Context, job: Job, options: { sendIfEmpty: boolean }): Promise<RenderedMessage | null> {
   if (job.rendered_subject && job.rendered_html && job.rendered_text) {
     return { subject: job.rendered_subject, html: job.rendered_html, text: job.rendered_text };
   }
@@ -200,7 +217,7 @@ async function summaryMessage(ctx: Context, job: Job): Promise<RenderedMessage |
   // Every subscriber gets the same content: load it once per week per run.
   if (!ctx.summaries.has(period)) ctx.summaries.set(period, loadSummaryItems(ctx.supabase, period));
   const items = await ctx.summaries.get(period)!;
-  if (items.length === 0 && !ctx.settings.weekly_summary_send_if_empty) return null;
+  if (items.length === 0 && !ctx.settings.weekly_summary_send_if_empty && !options.sendIfEmpty) return null;
 
   const rendered = renderWeeklySummary({
     officeName: ctx.settings.office_name,

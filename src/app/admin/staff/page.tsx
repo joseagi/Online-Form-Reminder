@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
+import { AdminTabs } from '@/app/admin/admin-tabs';
 import { requireAdmin } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { InviteForm } from './invite-form';
@@ -30,6 +31,7 @@ async function StaffAdmin() {
 
   return (
     <div className="space-y-10">
+      <AdminTabs current="staff" />
       <h1 className="text-2xl font-semibold tracking-tight">Staff</h1>
       <section>
         <h2 className="mb-3 text-lg font-medium">Invite a staff member</h2>

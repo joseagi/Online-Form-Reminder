@@ -29,8 +29,8 @@ async function UserMenu() {
         Activities
       </Link>
       {user.role === 'admin' && (
-        <Link href="/admin/staff" className="hover:underline">
-          Staff
+        <Link href="/admin/notifications" className="hover:underline">
+          Admin
         </Link>
       )}
       <span className="text-zinc-600 dark:text-zinc-400" data-testid="signed-in-as">

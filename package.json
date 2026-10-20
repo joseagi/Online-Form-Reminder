@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "e2e": "playwright test",
-    "functions:check": "deno check --config supabase/functions/dispatch-notifications/deno.json supabase/functions/dispatch-notifications/index.ts",
+    "functions:check": "deno check --config supabase/functions/dispatch-notifications/deno.json supabase/functions/dispatch-notifications/index.ts && deno check --config supabase/functions/summary-preview/deno.json supabase/functions/summary-preview/index.ts",
     "dispatch:setup": "node --env-file=.env.local scripts/setup-local-dispatch.mjs",
     "db:start": "supabase start -x studio",
     "db:stop": "supabase stop",
