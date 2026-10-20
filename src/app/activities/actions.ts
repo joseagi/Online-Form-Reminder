@@ -6,8 +6,10 @@ import {
   activityFormSchema,
   issuesByPath,
   normalizePhone,
+  statusChangeSchema,
   toActivityPayload,
   type ActivityFormValues,
+  type StatusChange,
   type ValidActivityForm,
 } from '@/lib/activities/schema';
 import { createClient } from '@/lib/supabase/server';
@@ -46,22 +48,44 @@ export async function saveActivity(_prev: SaveActivityState, input: ActivityForm
     p_recipients: recipients,
     p_expected_version: parsed.data.expectedVersion,
   });
-  if (error || !id) return { error: saveErrorMessage(error) };
+  if (error || !id) return { error: activityErrorMessage(error, 'save_activity') };
 
   redirect(`/activities/${id}?notice=saved`);
 }
 
-// Error codes come from public.save_activity (see its migration).
-function saveErrorMessage(error: { code?: string; message: string } | null): string {
+export type StatusChangeState = { error?: string };
+
+// Complete, cancel or reopen an activity.
+export async function changeActivityStatus(_prev: StatusChangeState, input: StatusChange): Promise<StatusChangeState> {
+  await requireUser();
+
+  const parsed = statusChangeSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please try again.' };
+
+  const { activityId, status, reason, expectedVersion } = parsed.data;
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_activity_status', {
+    p_activity_id: activityId,
+    p_status: status,
+    p_reason: reason || undefined,
+    p_expected_version: expectedVersion,
+  });
+  if (error) return { error: activityErrorMessage(error, 'set_activity_status') };
+
+  redirect(`/activities/${activityId}?notice=${status}`);
+}
+
+// Error codes come from the database functions (see their migration).
+function activityErrorMessage(error: { code?: string; message: string } | null, operation: string): string {
   switch (error?.code) {
     case '40001':
-      return 'Someone else saved changes to this activity while you were editing it. Open it again to see their changes, then make yours.';
+      return 'Someone else changed this activity after you opened it. Reload the page to see their changes, then try again.';
     case '42501':
-      return 'You do not have permission to edit this activity, or it no longer exists.';
+      return 'You do not have permission to change this activity, or it no longer exists.';
     case '22023':
       return error.message;
     default:
-      console.error('save_activity failed:', error);
+      console.error(`${operation} failed:`, error);
       return 'The activity could not be saved. Please check the details and try again.';
   }
 }

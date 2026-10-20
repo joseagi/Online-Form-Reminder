@@ -32,7 +32,7 @@ async function EditActivity({ params }: Pick<PageProps<'/activities/[id]/edit'>,
     <>
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">Edit activity</h1>
       <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
-        Status: {activity.status}. Completing, cancelling and reopening arrive in a later stage.
+        Status: {activity.status}. To complete, cancel or reopen it, use the buttons on the activity’s page.
       </p>
       <ActivityForm
         mode="edit"

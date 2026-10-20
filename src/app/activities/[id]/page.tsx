@@ -9,10 +9,18 @@ import { formatTimestamp, formatWhen } from '@/lib/activities/format';
 import { describeChange, type HistoryEntry } from '@/lib/activities/history';
 import { ROLE_LABELS, isUuid } from '@/lib/activities/schema';
 import { firstParam } from '@/lib/forms';
+import { StatusActions } from './status-actions';
 
 export const metadata: Metadata = { title: 'Activity · Office Activities' };
 
 const STATUS_LABELS = { scheduled: 'Scheduled', completed: 'Completed', cancelled: 'Cancelled' } as const;
+
+const NOTICES: Record<string, string> = {
+  saved: 'Activity saved.',
+  completed: 'Activity marked as completed.',
+  cancelled: 'Activity cancelled.',
+  scheduled: 'Activity reopened.',
+};
 
 export default function ActivityPage({ params, searchParams }: PageProps<'/activities/[id]'>) {
   return (
@@ -31,7 +39,7 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
 
   const [activity, canEdit, history] = await Promise.all([getActivity(id), canEditActivity(id), getActivityHistory(id)]);
   if (!activity) notFound();
-  const saved = firstParam((await searchParams).notice) === 'saved';
+  const notice = NOTICES[firstParam((await searchParams).notice) ?? ''];
 
   return (
     <article className="space-y-8">
@@ -40,7 +48,7 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
           ← All activities
         </Link>
       </p>
-      {saved && <Alert tone="success">Activity saved.</Alert>}
+      {notice && <Alert tone="success">{notice}</Alert>}
 
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -66,6 +74,11 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
           <span className="font-medium">{activity.status === 'cancelled' ? 'Reason for cancelling' : 'Note'}:</span>{' '}
           {activity.status_reason}
         </p>
+      )}
+
+      {canEdit && (
+        // Keyed by version so the buttons reset after each change.
+        <StatusActions key={activity.version} activityId={activity.id} status={activity.status} version={activity.version} />
       )}
 
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-[12rem_1fr]">

@@ -136,6 +136,20 @@ export const activityFormSchema = z
     }
   });
 
+// Complete, cancel or reopen (mirrors public.set_activity_status).
+export const statusChangeSchema = z
+  .object({
+    activityId: z.uuid(),
+    status: z.enum(['scheduled', 'completed', 'cancelled']),
+    reason: z.string().trim().max(500, 'Use at most 500 characters.'),
+    expectedVersion: z.number().int().positive(),
+  })
+  .refine((v) => v.status !== 'cancelled' || v.reason !== '', {
+    message: 'Give a reason for cancelling the activity.',
+    path: ['reason'],
+  });
+export type StatusChange = z.input<typeof statusChangeSchema>;
+
 export type ActivityFormValues = z.input<typeof activityFormSchema>;
 export type ValidActivityForm = z.output<typeof activityFormSchema>;
 

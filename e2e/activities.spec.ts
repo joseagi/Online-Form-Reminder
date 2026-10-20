@@ -91,7 +91,7 @@ test('an edit based on an old version is refused without losing what was typed',
 
   await page.getByLabel('Title', { exact: true }).fill(`Saved second ${run}`);
   await page.getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.getByText(/Someone else saved changes to this activity while you were editing it/)).toBeVisible();
+  await expect(page.getByText(/Someone else changed this activity after you opened it/)).toBeVisible();
   await expect(page.getByLabel('Title', { exact: true })).toHaveValue(`Saved second ${run}`);
 
   await page.goto(`/activities/${id}`);

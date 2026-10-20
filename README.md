@@ -22,7 +22,8 @@ Internal web app for an office of up to about 20 staff:
 | 3a. Activity database operations (save with people, status changes, office info) | Done. 171 pgTAP tests passing |
 | 3b. Activity form (create and edit), basic detail page | Done |
 | 3c. Register: list, search, filters, detail with change history | Done |
-| 3d. Status changes in the UI; calendar | Next |
+| 3d. Complete / cancel / reopen in the UI; month and week calendar | Done. **Phase 3 complete** |
+| 4. Sunday office summary (planner, templates, preview, test mode) | Next |
 
 ## Prerequisites (Windows)
 

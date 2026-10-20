@@ -4,6 +4,7 @@ import {
   emptyActivityForm,
   issuesByPath,
   normalizePhone,
+  statusChangeSchema,
   toActivityPayload,
   type ActivityFormValues,
   type PersonEntry,
@@ -110,6 +111,21 @@ describe('toActivityPayload', () => {
       visibility: 'office',
     });
     expect(toActivityPayload(parsed)).not.toHaveProperty('id');
+  });
+});
+
+describe('statusChangeSchema', () => {
+  const base = { activityId: SADE, expectedVersion: 2, reason: '' };
+
+  it('needs a reason to cancel', () => {
+    const result = statusChangeSchema.safeParse({ ...base, status: 'cancelled', reason: '   ' });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(issuesByPath(result.error).reason).toBe('Give a reason for cancelling the activity.');
+  });
+
+  it('allows completing or reopening without one', () => {
+    expect(statusChangeSchema.safeParse({ ...base, status: 'completed' }).success).toBe(true);
+    expect(statusChangeSchema.safeParse({ ...base, status: 'scheduled' }).success).toBe(true);
   });
 });
 
