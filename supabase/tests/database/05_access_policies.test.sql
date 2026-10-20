@@ -37,6 +37,7 @@ grant execute on function tests.rows_affected(text) to authenticated;
 alter table public.profiles disable trigger profiles_guard_update;
 update public.profiles set is_active = false;
 alter table public.profiles enable trigger profiles_guard_update;
+delete from public.notification_logs;   -- including the scheduler's run heartbeats
 delete from public.notification_jobs;
 delete from public.activities;
 delete from public.contacts;

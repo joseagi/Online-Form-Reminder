@@ -1,0 +1,223 @@
+// Notification dispatcher. Called every few minutes by Supabase Cron (pg_cron + pg_net), and only
+// with the shared dispatch secret. Each run:
+//   1. plans the weekly summaries (idempotent),
+//   2. claims due jobs (leases them, so concurrent runs never share a job),
+//   3. builds each message (rendered once, then frozen so retries resend the same payload),
+//   4. sends it through the provider chosen by the test-mode gate,
+//   5. records the outcome, and logs run.started / run.finished as a heartbeat.
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { resolveGate, type Gate, type SettingsMode } from '../_shared/mode.ts';
+import { LogProvider, type NotificationProvider } from '../_shared/providers.ts';
+import { constantTimeEqual } from '../_shared/security.ts';
+import { markAsTest, renderWeeklySummary, type RenderedMessage, type SummaryItem } from '../_shared/weekly-summary.ts';
+
+type Job = {
+  id: string;
+  kind: 'day_before_reminder' | 'weekly_summary' | 'test';
+  dedupe_key: string;
+  destination: string;
+  period_start: string | null;
+  scheduled_for: string;
+  rendered_subject: string | null;
+  rendered_html: string | null;
+  rendered_text: string | null;
+};
+
+type Settings = {
+  office_name: string;
+  timezone: string;
+  notification_mode: SettingsMode;
+  test_redirect_email: string | null;
+  email_from_name: string;
+  email_reply_to: string | null;
+  weekly_summary_send_if_empty: boolean;
+  dispatch_batch_size: number;
+};
+
+type Counts = { planned: number; claimed: number; sent: number; retrying: number; failed: number; skipped: number };
+
+// A summary that goes out more than this long after its scheduled time is marked as delayed.
+const DELAYED_AFTER_MS = 30 * 60 * 1000;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function serviceKey(): string {
+  const keys = Deno.env.get('SUPABASE_SECRET_KEYS');
+  if (keys) {
+    const parsed = JSON.parse(keys) as Record<string, string>;
+    if (parsed.default) return parsed.default;
+  }
+  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!legacy) throw new Error('No service key available to the function');
+  return legacy;
+}
+
+Deno.serve(async (request) => {
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+
+  const expected = Deno.env.get('DISPATCH_SECRET');
+  if (!expected) return json({ error: 'dispatcher_not_configured' }, 500);
+  if (!constantTimeEqual(request.headers.get('x-dispatch-secret') ?? '', expected)) {
+    return json({ error: 'unauthorized' }, 401);
+  }
+
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey(), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const runId = crypto.randomUUID();
+  const counts: Counts = { planned: 0, claimed: 0, sent: 0, retrying: 0, failed: 0, skipped: 0 };
+
+  await supabase.rpc('log_dispatch_run', { p_run_id: runId, p_event: 'run.started' });
+  try {
+    await dispatch(supabase, runId, counts);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Dispatch run failed:', message);
+    await supabase.rpc('log_dispatch_run', { p_run_id: runId, p_event: 'run.failed', p_details: { ...counts, error: message } });
+    return json({ runId, ...counts, error: 'run_failed' }, 500);
+  }
+  await supabase.rpc('log_dispatch_run', { p_run_id: runId, p_event: 'run.finished', p_details: counts });
+  return json({ runId, ...counts });
+});
+
+async function dispatch(supabase: SupabaseClient, runId: string, counts: Counts): Promise<void> {
+  const planned = await supabase.rpc('plan_weekly_summaries');
+  if (planned.error) throw new Error(`planning failed: ${planned.error.message}`);
+  counts.planned = planned.data ?? 0;
+
+  const { data: settings, error: settingsError } = await supabase
+    .from('system_settings')
+    .select('office_name, timezone, notification_mode, test_redirect_email, email_from_name, email_reply_to, weekly_summary_send_if_empty, dispatch_batch_size')
+    .single<Settings>();
+  if (settingsError || !settings) throw new Error(`settings unavailable: ${settingsError?.message}`);
+
+  // Phase 5 adds the real email provider; until then every message goes to the log provider.
+  const realProvider: NotificationProvider | null = null;
+  const gate = resolveGate({
+    settingsMode: settings.notification_mode,
+    notificationsLiveEnv: Deno.env.get('NOTIFICATIONS_LIVE'),
+    hasRealProvider: realProvider !== null,
+    testRedirectEmail: settings.test_redirect_email,
+  });
+  if (gate.action === 'send' && gate.mode === 'test' && gate.warning) console.warn(gate.warning);
+
+  const claimed = await supabase.rpc('claim_notification_jobs', { p_run_id: runId, p_limit: settings.dispatch_batch_size });
+  if (claimed.error) throw new Error(`claiming failed: ${claimed.error.message}`);
+  const jobs = (claimed.data ?? []) as Job[];
+  counts.claimed = jobs.length;
+
+  const summaries = new Map<string, Promise<SummaryItem[]>>();
+  const context = { supabase, runId, settings, gate, provider: realProvider ?? new LogProvider(), summaries };
+
+  for (const job of jobs) {
+    // One job's problem must not stop the others: it is retried later instead.
+    let status: string;
+    try {
+      status = await processJob(context, job);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Job ${job.id} failed:`, message);
+      status = await complete(context, job, { p_outcome: 'retry', p_error_code: 'dispatcher_error', p_error_message: message });
+    }
+    if (status === 'sent') counts.sent++;
+    else if (status === 'pending') counts.retrying++;
+    else if (status === 'failed') counts.failed++;
+    else counts.skipped++;
+  }
+}
+
+type Context = {
+  supabase: SupabaseClient;
+  runId: string;
+  settings: Settings;
+  gate: Gate;
+  provider: NotificationProvider;
+  summaries: Map<string, Promise<SummaryItem[]>>;
+};
+
+async function complete(ctx: Context, job: Job, outcome: Record<string, unknown>): Promise<string> {
+  const { data, error } = await ctx.supabase.rpc('complete_notification_job', { p_job_id: job.id, p_run_id: ctx.runId, ...outcome });
+  if (error) throw new Error(`recording the outcome failed: ${error.message}`);
+  return data as string;
+}
+
+async function processJob(ctx: Context, job: Job): Promise<string> {
+  if (ctx.gate.action === 'skip') return complete(ctx, job, { p_outcome: 'skipped', p_reason: ctx.gate.reason });
+  if (job.kind !== 'weekly_summary') return complete(ctx, job, { p_outcome: 'skipped', p_reason: 'unsupported_kind' });
+
+  const message = await summaryMessage(ctx, job);
+  if (!message) return complete(ctx, job, { p_outcome: 'skipped', p_reason: 'empty_week' });
+
+  const testMode = ctx.gate.mode === 'test';
+  const outgoing = testMode ? markAsTest(message, job.destination) : message;
+  const to = testMode ? (ctx.gate.action === 'send' && ctx.gate.mode === 'test' && ctx.gate.redirectTo) || job.destination : job.destination;
+
+  const result = await ctx.provider.send(
+    {
+      channel: 'email',
+      to,
+      ...outgoing,
+      fromName: ctx.settings.email_from_name,
+      replyTo: ctx.settings.email_reply_to,
+    },
+    { idempotencyKey: job.dedupe_key },
+  );
+
+  if (result.ok) {
+    return complete(ctx, job, {
+      p_outcome: 'sent',
+      p_provider: ctx.provider.name,
+      p_provider_message_id: result.providerMessageId,
+      p_send_mode: ctx.gate.mode,
+    });
+  }
+  return complete(ctx, job, {
+    p_outcome: result.retryable ? 'retry' : 'failed',
+    p_provider: ctx.provider.name,
+    p_http_status: result.httpStatus ?? null,
+    p_error_code: result.code,
+    p_error_message: result.message,
+    p_retry_after: result.retryAfterSeconds ? `${result.retryAfterSeconds} seconds` : null,
+  });
+}
+
+async function loadSummaryItems(supabase: SupabaseClient, period: string): Promise<SummaryItem[]> {
+  const { data, error } = await supabase.rpc('weekly_summary_items', { p_period_start: period });
+  if (error) throw new Error(`summary content unavailable: ${error.message}`);
+  return (data ?? []) as SummaryItem[];
+}
+
+// The job's message: the frozen payload on a retry, otherwise rendered now and frozen.
+// Returns null for an empty week that should not be sent.
+async function summaryMessage(ctx: Context, job: Job): Promise<RenderedMessage | null> {
+  if (job.rendered_subject && job.rendered_html && job.rendered_text) {
+    return { subject: job.rendered_subject, html: job.rendered_html, text: job.rendered_text };
+  }
+
+  const period = job.period_start!;
+  // Every subscriber gets the same content: load it once per week per run.
+  if (!ctx.summaries.has(period)) ctx.summaries.set(period, loadSummaryItems(ctx.supabase, period));
+  const items = await ctx.summaries.get(period)!;
+  if (items.length === 0 && !ctx.settings.weekly_summary_send_if_empty) return null;
+
+  const rendered = renderWeeklySummary({
+    officeName: ctx.settings.office_name,
+    officeTimezone: ctx.settings.timezone,
+    periodStart: period,
+    items,
+    appUrl: Deno.env.get('APP_URL') ?? 'http://localhost:3000',
+    delayed: Date.now() - new Date(job.scheduled_for).getTime() > DELAYED_AFTER_MS,
+  });
+
+  const frozen = await ctx.supabase.rpc('freeze_notification_payload', {
+    p_job_id: job.id,
+    p_subject: rendered.subject,
+    p_html: rendered.html,
+    p_text: rendered.text,
+  });
+  const stored = (frozen.data as { subject: string; html: string; body_text: string }[] | null)?.[0];
+  if (frozen.error || !stored) throw new Error(`freezing the message failed: ${frozen.error?.message ?? 'job no longer claimed'}`);
+  return { subject: stored.subject, html: stored.html, text: stored.body_text };
+}

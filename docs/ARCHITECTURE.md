@@ -102,6 +102,14 @@ Assumptions that need your confirmation are listed in §11.
 - **Rejected:** Vercel Cron, because Hobby is non-commercial only and it would tie reminders to the web host. A long-running worker, because it means another server to run and pay for.
 - **Edge Function limits we design around:** 2 s CPU per request (async I/O excluded), 150 s wall clock on Free and 400 s on paid plans, 256 MB memory, and outbound ports 25/587 blocked. That last limit is why we use Resend's HTTPS API, not SMTP. Each run processes a bounded batch (default 25 jobs), and the next tick continues.
 - The dispatcher runs with `verify_jwt = false` and checks a dedicated `x-dispatch-secret` header with a constant-time comparison. The publishable key is public, so it must not be what authorises dispatch.
+- **Implemented in stage 4b:**
+  - `supabase/functions/dispatch-notifications`. Pure modules live in `supabase/functions/_shared`: the template, the HTML escaping, the mode gate, the provider interface with a `log` provider, and the secret comparison. Vitest tests them; Deno type-checks them (`npm run functions:check`).
+  - Migration `20261022100000_dispatch_schedule.sql` enables `pg_cron` and `pg_net`, adds `configure_dispatch(url, secret)` (Vault, service role only), and schedules `dispatch-notifications` (`*/5 * * * *`: plan, then call the function with a 60-second timeout) and `clean-dispatch-history` (weekly).
+  - **Verified locally:** a Cron-triggered run returned HTTP 200 through the Edge Runtime and logged its heartbeat, with no one calling it.
+- **Production setup (Phase 7):**
+  - set `DISPATCH_SECRET` and `APP_URL` with `supabase secrets set`
+  - call `configure_dispatch('https://<project>.supabase.co/functions/v1/dispatch-notifications', '<same secret>')` once
+  - set `NOTIFICATIONS_LIVE=true` only when going live
 
 ### AD-05 Queue: a transactional `notification_jobs` table (the queue is the database)
 - One job = one message to one person on one channel for one occurrence.

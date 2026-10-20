@@ -36,6 +36,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - name: Type-check the Edge Functions (Deno)
+        run: npm run functions:check
       - run: npm test
       - run: npm run build
 
@@ -50,6 +52,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+
+      # Read by the local Edge Runtime when the stack starts.
+      - name: Give the dispatcher a throwaway secret
+        run: printf 'DISPATCH_SECRET=%s\nAPP_URL=http://localhost:3000\n' "$(openssl rand -hex 32)" > supabase/functions/.env
 
       - name: Start local Supabase (applies every migration from scratch)
         run: npm run db:start
@@ -71,6 +77,11 @@ jobs:
             echo "::error::Could not read the local Supabase URL/keys from 'supabase status'"
             exit 1
           fi
+
+      - name: Configure the dispatcher schedule (Vault)
+        run: npm run dispatch:setup
+      - name: Dispatcher integration tests (Edge Function, log-only provider)
+        run: npm run test:integration
 
       - name: Install the test browser
         run: npx playwright install --with-deps chromium

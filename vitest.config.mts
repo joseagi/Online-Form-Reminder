@@ -7,7 +7,8 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   test: {
-    // Unit tests only; browser tests live in e2e/ and run with Playwright.
-    include: ['src/**/*.test.ts'],
+    // Unit tests only: the app's helpers and the Edge Functions' pure modules. Browser tests live
+    // in e2e/ (Playwright); tests against the running local stack live in tests/integration/.
+    include: ['src/**/*.test.ts', 'supabase/functions/**/*.test.ts'],
   },
 });

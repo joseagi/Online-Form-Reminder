@@ -24,7 +24,7 @@ Internal web app for an office of up to about 20 staff:
 | 3c. Register: list, search, filters, detail with change history | Done |
 | 3d. Complete / cancel / reopen in the UI; month and week calendar | Done. **Phase 3 complete** |
 | 4a. Summary content, weekly planner and notification queue (database) | Done. 219 pgTAP tests passing |
-| 4b. Dispatcher Edge Function (template, log-only provider, test-mode gate) and Supabase Cron schedule | Next |
+| 4b. Dispatcher Edge Function (template, log-only provider, test-mode gate) and Supabase Cron schedule | Done |
 | 4c. Admin: summary settings, recipients, preview, test send, notification log | Planned |
 
 ## Prerequisites (Windows)
@@ -68,7 +68,10 @@ Locally, no email leaves your machine: invitations and password-reset emails are
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate Next.js route types, then `tsc --noEmit` |
-| `npm test` | Unit tests (Vitest, `src/**/*.test.ts`) |
+| `npm test` | Unit tests (Vitest: `src/**/*.test.ts` and the Edge Functions' pure modules) |
+| `npm run test:integration` | Tests against the running local stack, e.g. the dispatcher Edge Function (`tests/integration/`) |
+| `npm run functions:check` | Type-check the Edge Functions with Deno |
+| `npm run dispatch:setup` | Local only: give the dispatcher a secret (`supabase/functions/.env`) and tell the database where to call it, so Supabase Cron runs it every 5 minutes |
 | `npm run e2e` | Browser tests (Playwright, `e2e/`). Needs the local stack running; builds and starts the app on port 3000 unless it's already running. First time only: `npx playwright install chromium`. Or use the Edge already on Windows: `$env:PLAYWRIGHT_CHANNEL='msedge'; npm run e2e`. The tests leave `e2e-…@example.com` users in the local database; `npm run db:reset` clears them |
 | `npm run admin:create -- --email … --name "…"` | Create the first administrator for an environment (uses `SUPABASE_SECRET_KEY`) |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` after a schema change |
@@ -79,7 +82,14 @@ Locally, no email leaves your machine: invitations and password-reset emails are
 | `npm run db:test` | Run the pgTAP database tests in `supabase/tests/database/` |
 | `npm run db:lint` | Check database functions for errors |
 
-The local stack leaves out Supabase Studio and the Edge Functions runtime until they're needed (Phase 4). The keys `db:start` prints are the standard local-development keys, not production secrets.
+The local stack leaves out Supabase Studio. The keys `db:start` prints are the standard local-development keys, not production secrets.
+
+### Scheduled notifications (local)
+
+- **Every 5 minutes:** Supabase Cron plans the weekly summaries in the database, then calls the `dispatch-notifications` Edge Function with a shared secret. This keeps working whether or not anyone has the website open.
+- **Nothing is delivered yet.** The dispatcher only has a log-only provider; Phase 5 adds the real email provider. Real recipients need **both** `notification_mode = live` (set by an admin) **and** `NOTIFICATIONS_LIVE=true` on the server (production only).
+- **One-time setup:** run `npm run dispatch:setup`, then restart the stack (`npm run db:stop`, then `npm run db:start`). The restart lets the function read its new secret.
+- **To see what happened:** read `public.notification_jobs` (each message, its rendered content and status) and `public.notification_logs` (every attempt, plus `run.started` / `run.finished` heartbeats).
 
 ### Database changes
 
