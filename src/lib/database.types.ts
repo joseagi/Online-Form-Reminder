@@ -224,6 +224,55 @@ isOneToOne: false
 "can_view_activity":
 { Args: { "p_activity_id": string }; Returns: boolean
                            },
+"claim_notification_jobs":
+{ Args: { "p_lease"?: string,"p_limit"?: number,"p_now"?: string,"p_run_id": string }; Returns: {
+              "accepted_at": string | null,
+"activity_id": string | null,
+"attempt_count": number,
+"basis_starts_at": string | null,
+"channel": Database["public"]['Enums']["notification_channel"],
+"contact_id": string | null,
+"created_at": string,
+"dedupe_key": string,
+"delivery_status": Database["public"]['Enums']["delivery_status"],
+"delivery_updated_at": string | null,
+"destination": string,
+"expires_at": string | null,
+"first_attempt_at": string | null,
+"id": string,
+"kind": Database["public"]['Enums']["notification_kind"],
+"last_error_code": string | null,
+"last_error_message": string | null,
+"lease_expires_at": string | null,
+"max_attempts": number,
+"period_start": string | null,
+"profile_id": string | null,
+"provider": string | null,
+"provider_message_id": string | null,
+"rendered_html": string | null,
+"rendered_subject": string | null,
+"rendered_text": string | null,
+"run_after": string,
+"scheduled_for": string,
+"send_mode": Database["public"]['Enums']["notification_mode"] | null,
+"status": Database["public"]['Enums']["job_status"],
+"status_reason": string | null,
+"updated_at": string
+            }[]
+                          SetofOptions: {
+        from: "*"
+        to: "notification_jobs"
+        isOneToOne: false
+        isSetofReturn: true
+      } },
+"complete_notification_job":
+{ Args: { "p_error_code"?: string,"p_error_message"?: string,"p_http_status"?: number,"p_job_id": string,"p_now"?: string,"p_outcome": string,"p_provider"?: string,"p_provider_message_id"?: string,"p_reason"?: string,"p_retry_after"?: string,"p_run_id": string,"p_send_mode"?: Database["public"]['Enums']["notification_mode"] }; Returns: Database["public"]['Enums']["job_status"]
+                           },
+"freeze_notification_payload":
+{ Args: { "p_html": string,"p_job_id": string,"p_subject": string,"p_text": string }; Returns: {
+              "body_text": string,"html": string,"subject": string
+            }[]
+                           },
 "is_active_staff":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
@@ -236,10 +285,16 @@ isOneToOne: false
 "is_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
+"log_dispatch_run":
+{ Args: { "p_details"?: Json,"p_event": string,"p_run_id": string }; Returns: undefined
+                           },
 "office_info":
 { Args: Record<PropertyKey, never>; Returns: {
               "office_name": string,"timezone": string
             }[]
+                           },
+"plan_weekly_summaries":
+{ Args: { "p_now"?: string }; Returns: number
                            },
 "save_activity":
 { Args: { "p_activity": Json,"p_expected_version"?: number,"p_recipients": Json }; Returns: string
@@ -249,6 +304,11 @@ isOneToOne: false
                            },
 "set_activity_status":
 { Args: { "p_activity_id": string,"p_expected_version"?: number,"p_reason"?: string,"p_status": Database["public"]['Enums']["activity_status"] }; Returns: number
+                           },
+"weekly_summary_items":
+{ Args: { "p_period_start": string }; Returns: {
+              "activity_date": string,"activity_id": string,"collaborator_names": (string)[],"end_time": string,"location": string,"meeting_url": string,"preparation_notes": string,"responsible_name": string,"start_time": string,"starts_at": string,"timezone": string,"title": string
+            }[]
                            }
           }
           Enums: {

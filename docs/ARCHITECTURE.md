@@ -366,6 +366,12 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 | `set_activity_status(id, status, reason, expected_version)` | invoker | scheduled → completed or cancelled, and back to scheduled. Cancelling needs a reason. **Built in stage 3a** |
 | `office_info()` | definer, active staff only | Office name and time zone (the default for new activities). **Built in stage 3a** |
 | `activity_history(activity_id)` | definer, returns rows only if `can_view_activity` | The activity's own changes and its people's changes from `audit_logs`, oldest first, with who made them. Indexed by activity. **Built in stage 3c** |
+| `weekly_summary_items(period_start)` | definer, service_role only | Scheduled, office-visible, summary-enabled activities from Monday 00:00 to the next Monday 00:00 in the office time zone. **Built in stage 4a** |
+| `plan_weekly_summaries(p_now)` | definer, service_role/owner | One `sum:email:<monday>:<p\|c>:<id>` job per subscriber for this and next Sunday. Follows send-time, cutoff and subscriber changes until sent; never touches sent, failed or skipped jobs; leaves a Sunday alone once its cutoff has passed. **Built in stage 4a** |
+| `claim_notification_jobs(run_id, limit, p_now, lease)` | definer, service_role | Closes expired jobs (pending → skipped `expired`; in progress with unknown outcome → failed `outcome_unknown`), then leases due jobs with `FOR UPDATE SKIP LOCKED`. **Built in stage 4a** |
+| `freeze_notification_payload(job, subject, html, text)` | definer, service_role | Stores the first render and returns what is stored, so retries send an identical payload. **Built in stage 4a** |
+| `complete_notification_job(job, run, outcome, …)` | definer, service_role | sent / retry (waits 1 m, 5 m, 15 m, 1 h, 3 h, capped by deadline and attempts) / failed / skipped, logged in `notification_logs`. **Built in stage 4a** |
+| `log_dispatch_run(run, event, details)` | definer, service_role | Run-level heartbeat entries. **Built in stage 4a** |
 | Error codes | | `42501` not found or not allowed · `40001` someone else saved first · `22023` invalid request · `23xxx` field rules |
 | `sync_activity_reminders(activity_id, p_now)` | definer | Called by triggers. Creates, revives or cancels reminder jobs |
 | `plan_notifications(p_now)` | definer, cron only | Weekly summary jobs plus a reconcile pass over upcoming reminders |

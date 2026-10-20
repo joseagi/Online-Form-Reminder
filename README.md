@@ -23,7 +23,9 @@ Internal web app for an office of up to about 20 staff:
 | 3b. Activity form (create and edit), basic detail page | Done |
 | 3c. Register: list, search, filters, detail with change history | Done |
 | 3d. Complete / cancel / reopen in the UI; month and week calendar | Done. **Phase 3 complete** |
-| 4. Sunday office summary (planner, templates, preview, test mode) | Next |
+| 4a. Summary content, weekly planner and notification queue (database) | Done. 219 pgTAP tests passing |
+| 4b. Dispatcher Edge Function (template, log-only provider, test-mode gate) and Supabase Cron schedule | Next |
+| 4c. Admin: summary settings, recipients, preview, test send, notification log | Planned |
 
 ## Prerequisites (Windows)
 
