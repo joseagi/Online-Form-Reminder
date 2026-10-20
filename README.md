@@ -18,7 +18,8 @@ Internal web app for an office of up to about 20 staff:
 | 2b. Supabase local stack, schema, audit, deny-by-default RLS | Done |
 | 2c. RLS access policies + permission tests | Done. 128 pgTAP tests passing |
 | 2d. Sign-in (invite-only), password reset, protected pages, staff invitations | Done |
-| 2e. Continuous integration (GitHub Actions) | Next |
+| 2e. Continuous integration (GitHub Actions) + Dependabot | Done |
+| 3. Activities: form, register, search, calendar, status changes | Next |
 
 ## Prerequisites (Windows)
 
@@ -85,6 +86,20 @@ If `db:start` can't download images from `public.ecr.aws` or `ghcr.io`, tell the
 $env:SUPABASE_INTERNAL_IMAGE_REGISTRY = 'docker.io'
 npm run db:start
 ```
+
+## Continuous integration
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push to `main` and every pull request. Two jobs run side by side:
+
+| Job | Checks |
+|---|---|
+| Lint, types, unit tests, build | `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` |
+| Database and browser tests | Starts a fresh local Supabase in the runner (all migrations from scratch), then `npm run db:test`, `npm run db:lint` and `npm run e2e` |
+
+- **No secrets:** CI uses only the throwaway local stack inside the runner, and never touches a hosted project.
+- **Failed browser tests** upload the Playwright report as a run artifact (kept 7 days).
+- **Dependency updates:** [Dependabot](.github/dependabot.yml) opens grouped pull requests monthly, for npm packages and for GitHub Actions. CI checks each one before it can be merged.
+- **Recommended:** in GitHub, go to **Settings → Branches** and add a rule for `main` that requires both CI jobs to pass before merging.
 
 ## Security rules
 

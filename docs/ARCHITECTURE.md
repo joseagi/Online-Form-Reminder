@@ -534,6 +534,13 @@ type SendResult =
 - Merge to `main` → the web app auto-deploys.
 - DB migrations (`supabase db push`) and Edge Functions (`supabase functions deploy`) are deployed by a GitHub Action that needs manual approval (GitHub Environments). Before that Action exists, they're run by hand from a documented checklist.
 
+**Implemented in stage 2e:** `.github/workflows/ci.yml` runs two parallel jobs.
+
+- **Lint, types, unit tests, build:** runs with placeholder Supabase values, because the build never contacts Supabase.
+- **Database and browser tests:** starts a fresh local Supabase in the runner, then runs the pgTAP tests, the database lint (fails on warnings) and the Playwright tests.
+
+Dependabot opens monthly update PRs. The migration and Edge Function deploy Action, with manual approval, comes in Phase 7, when a hosted project exists.
+
 ### Secrets (an `.env.example` template is added in Phase 2; real values never committed)
 - **Web host:**
   - `NEXT_PUBLIC_SUPABASE_URL`

@@ -7,7 +7,9 @@ export default defineConfig({
   testDir: './e2e',
   // One worker: the tests share one local database and one mail catcher.
   workers: 1,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  // In CI, fail if a test was left as test.only.
+  forbidOnly: !!process.env.CI,
+  reporter: [[process.env.CI ? 'line' : 'list'], ['html', { open: 'never' }]],
   use: {
     // Must match site_url in supabase/config.toml, because email links point there.
     baseURL: 'http://localhost:3000',
