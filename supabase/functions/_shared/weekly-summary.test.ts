@@ -11,6 +11,7 @@ function item(overrides: Partial<SummaryItem>): SummaryItem {
     start_time: '10:00:00',
     end_time: '11:30:00',
     timezone: 'Africa/Lagos',
+    starts_at: '2026-11-02T09:00:00Z', // 10:00 in Lagos
     location: 'Board room',
     meeting_url: null,
     preparation_notes: null,
@@ -34,9 +35,9 @@ describe('renderWeeklySummary', () => {
   const items = [
     item({}),
     item({ activity_id: 'a2', title: 'Report deadline', activity_date: '2026-11-02', start_time: null, end_time: null,
-           location: null, collaborator_names: [] }),
+           starts_at: '2026-11-01T23:00:00Z', location: null, collaborator_names: [] }),
     item({ activity_id: 'a3', title: 'London call', activity_date: '2026-11-04', timezone: 'Europe/London',
-           start_time: '09:00:00', end_time: null, meeting_url: 'https://meet.example/abc',
+           start_time: '09:00:00', end_time: null, starts_at: '2026-11-04T09:00:00Z', meeting_url: 'https://meet.example/abc',
            preparation_notes: 'Read the draft\nBring questions' }),
   ];
   const message = renderWeeklySummary({ ...base, periodStart: '2026-11-02', items });
@@ -55,8 +56,22 @@ describe('renderWeeklySummary', () => {
     expect(message.html).toContain('<h2 style="font-size:16px;margin:24px 0 8px">Monday 2 November</h2>');
   });
 
-  it('shows a different time zone when an activity is not in office time', () => {
-    expect(message.text).toContain('- 09:00 (Europe/London): London call');
+  it('shows a different time zone, and the office time, when an activity is not in office time', () => {
+    // 09:00 in London in November (GMT) is 10:00 in Lagos.
+    expect(message.text).toContain('- 09:00 (Europe/London time; starts 10:00 Africa/Lagos time): London call');
+  });
+
+  it('lists an activity under the office day it starts on', () => {
+    // Sunday 8 November 23:30 in London is Monday 9 November 00:30 in Lagos: the first day of that week.
+    const late = renderWeeklySummary({
+      ...base,
+      periodStart: '2026-11-09',
+      items: [item({ title: 'Late London call', activity_date: '2026-11-08', timezone: 'Europe/London',
+                     start_time: '23:30:00', end_time: null, starts_at: '2026-11-08T23:30:00Z' })],
+    });
+    expect(late.text).toContain('MONDAY 9 NOVEMBER');
+    expect(late.text).not.toContain('SUNDAY 8 NOVEMBER');
+    expect(late.text).toContain('- 23:30 (Europe/London time; starts Monday 00:30 Africa/Lagos time): Late London call');
   });
 
   it('keeps preparation notes and links to each activity and the register', () => {

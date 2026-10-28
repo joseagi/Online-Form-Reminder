@@ -129,6 +129,17 @@ Assumptions that need your confirmation are listed in §11.
 - Activities store `activity_date`, an optional `start_time`/`end_time`, and an IANA `timezone`.
 - A trigger derives `starts_at`/`ends_at` (`timestamptz`). All window arithmetic happens in SQL with `AT TIME ZONE` and half-open intervals `[start, end)`.
 - Display uses `Intl.DateTimeFormat` with `timeZone: 'Africa/Lagos'`.
+- **Clock changes (stage 6b, decisions 2026-10-28):** Lagos has no daylight saving, so these only matter for activities set in another zone, or if the office zone changes.
+  - **The reminder lead is exact hours.** "24 hours before" a 10:00 meeting on the Sunday London's clocks go forward is 09:00 London time on Saturday. That's what the setting's label promises ("this many hours before").
+  - **A clock time that doesn't exist is accepted.** For example, 01:30 London on the morning the clocks go forward is stored an hour later (02:30 BST), as PostgreSQL converts it; the page keeps showing the time as entered.
+  - **A clock time that happens twice** (01:30 when the clocks go back) is the second one (GMT).
+  - **Office-zone calculations follow the office's clock:** the Sunday send time, the 09:00 all-day reminder, and the summary week, which is 167 or 169 hours long in a change week.
+  - **Emails show office time too.** For an activity in another zone, the email gives its own clock time and zone, plus the office-time equivalent. That equivalent is computed from the stored instant (`_shared/time.ts`), with the weekday when it differs. The reminder subject names the zone.
+  - **Summary days are office days.** The summary lists a timed activity under the office day it starts on: a Sunday 23:30 London call is Monday in Lagos, which is the week it belongs to. `reminder_details` returns `starts_at` for this (migration `20261029110000_reminder_details_starts_at.sql`).
+  - **Verified:**
+    - pgTAP test 15, with the office in Europe/London across both 2027 changes; its expected values were worked out by hand from the London rules.
+    - Unit tests for timestamps, "today", the next summary, and both templates.
+    - **Mutation check:** grouping by the activity's own date fails the summary test.
 
 ### AD-08 Test mode needs two independent switches to send real email (§7.8)
 

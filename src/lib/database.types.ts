@@ -316,7 +316,7 @@ isOneToOne: false
                            },
 "reminder_details":
 { Args: { "p_job_id": string,"p_now"?: string }; Returns: {
-              "activity_date": string,"activity_id": string,"contact_email": string,"contact_name": string,"contact_phone": string,"description": string,"end_time": string,"location": string,"meeting_url": string,"others": (string)[],"preparation_notes": string,"problem": string,"recipient_is_staff": boolean,"recipient_name": string,"recipient_role": Database["public"]['Enums']["recipient_role"],"responsible_name": string,"start_time": string,"timezone": string,"title": string
+              "activity_date": string,"activity_id": string,"contact_email": string,"contact_name": string,"contact_phone": string,"description": string,"end_time": string,"location": string,"meeting_url": string,"others": (string)[],"preparation_notes": string,"problem": string,"recipient_is_staff": boolean,"recipient_name": string,"recipient_role": Database["public"]['Enums']["recipient_role"],"responsible_name": string,"start_time": string,"starts_at": string,"timezone": string,"title": string
             }[]
                            },
 "reminder_job_problem":

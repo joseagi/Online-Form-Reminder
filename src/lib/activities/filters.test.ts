@@ -68,3 +68,14 @@ describe('addDays', () => {
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
   });
 });
+
+describe('todayIn across clock changes', () => {
+  it('turns over at local midnight, whatever the offset that day', () => {
+    // London, BST (UTC+1): midnight is 23:00 UTC the day before.
+    expect(todayIn('Europe/London', new Date('2027-03-28T22:59:00Z'))).toBe('2027-03-28');
+    expect(todayIn('Europe/London', new Date('2027-03-28T23:00:00Z'))).toBe('2027-03-29');
+    // Back on GMT (UTC+0) after 31 October.
+    expect(todayIn('Europe/London', new Date('2027-10-31T23:59:00Z'))).toBe('2027-10-31');
+    expect(todayIn('Europe/London', new Date('2027-11-01T00:00:00Z'))).toBe('2027-11-01');
+  });
+});

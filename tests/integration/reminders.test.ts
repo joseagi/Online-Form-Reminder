@@ -121,10 +121,15 @@ describe('day-before reminders', () => {
 
     const sent = await dispatchUntilFinished(staffJob.id);
     expect(sent).toMatchObject({ status: 'sent', provider: 'log', send_mode: 'test' });
-    expect(sent.rendered_subject).toMatch(new RegExp(`^Reminder: Site <b>visit</b> ${run}, \\w+ \\d{1,2} \\w+ at \\d{2}:\\d{2}$`));
+    // The activity is in UTC, not office time (Lagos): the subject names its zone, and the body
+    // gives the Lagos time too, an hour later.
+    expect(sent.rendered_subject).toMatch(new RegExp(`^Reminder: Site <b>visit</b> ${run}, \\w+ \\d{1,2} \\w+ at \\d{2}:\\d{2} \\(UTC\\)$`));
     expect(sent.rendered_text).toContain(`Hello Reminder staff ${run},`);
     expect(sent.rendered_text).toContain('You are responsible for this activity.');
-    expect(sent.rendered_text).toMatch(/When: \w+ \d{1,2} \w+ \d{4}, \d{2}:\d{2} \(UTC\)/);
+    const when = /When: \w+ \d{1,2} \w+ \d{4}, (\d{2}):(\d{2}) \(UTC time; starts (?:\w+ )?(\d{2}):(\d{2}) Africa\/Lagos time\)/.exec(sent.rendered_text!);
+    expect(when).not.toBeNull();
+    const [, utcHour, utcMinute, lagosHour, lagosMinute] = when!.map(Number);
+    expect([lagosHour, lagosMinute]).toEqual([(utcHour + 1) % 24, utcMinute]);
     expect(sent.rendered_text).toContain(`Also taking part: Partner ${run}, Reminder quiet ${run}`);
     expect(sent.rendered_html).toContain(`Site &lt;b&gt;visit&lt;/b&gt; ${run}`);
     expect(sent.rendered_html).toContain(`/activities/${activityId}`);

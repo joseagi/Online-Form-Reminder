@@ -1,5 +1,6 @@
 import { escapeHtml, multiline, safeHref } from './html.ts';
 import type { RenderedMessage } from './message.ts';
+import { localDate, zoneNote } from './time.ts';
 
 // The Sunday office summary email. The same content goes to every subscriber, and it never
 // lists who receives it.
@@ -11,6 +12,7 @@ export type SummaryItem = {
   start_time: string | null; // HH:MM:SS
   end_time: string | null;
   timezone: string;
+  starts_at: string; // the instant (ISO): which office day it falls on, and the office time
   location: string | null;
   meeting_url: string | null;
   preparation_notes: string | null;
@@ -45,7 +47,14 @@ export function weekRange(periodStart: string): string {
 function timeLabel(item: SummaryItem, officeTimezone: string): string {
   if (!item.start_time) return 'All day';
   const range = item.end_time ? `${item.start_time.slice(0, 5)}–${item.end_time.slice(0, 5)}` : item.start_time.slice(0, 5);
-  return item.timezone === officeTimezone ? range : `${range} (${item.timezone})`;
+  return range + zoneNote({ timezone: item.timezone, activityDate: item.activity_date, startsAt: item.starts_at, officeTimezone });
+}
+
+// The office day an activity is listed under. The week is chosen in office time, so a timed
+// activity goes under the day it starts in the office (a Sunday-night call in London can be
+// Monday in Lagos); an all-day activity under its own date.
+function officeDay(item: SummaryItem, officeTimezone: string): string {
+  return item.start_time ? localDate(item.starts_at, officeTimezone) : item.activity_date;
 }
 
 export function renderWeeklySummary(input: {
@@ -62,10 +71,12 @@ export function renderWeeklySummary(input: {
   const activitiesUrl = `${appUrl}/activities?from=${periodStart}&to=${addDays(periodStart, 6)}`;
 
   const days: { date: string; items: SummaryItem[] }[] = [];
+  // Items arrive in start order, so each office day's items are together.
   for (const item of items) {
+    const date = officeDay(item, officeTimezone);
     const last = days[days.length - 1];
-    if (last?.date === item.activity_date) last.items.push(item);
-    else days.push({ date: item.activity_date, items: [item] });
+    if (last?.date === date) last.items.push(item);
+    else days.push({ date, items: [item] });
   }
 
   const intro = items.length === 0

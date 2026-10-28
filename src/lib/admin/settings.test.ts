@@ -104,3 +104,17 @@ describe('nextSummary (office time, Africa/Lagos = UTC+1)', () => {
     expect(at('2026-10-24T23:30:00Z')).toEqual({ sendDate: '2026-10-25', periodStart: '2026-10-26' });
   });
 });
+
+describe('nextSummary in an office with clock changes (Europe/London)', () => {
+  const at = (iso: string) => nextSummary({ now: new Date(iso), timeZone: 'Europe/London', sendTime: '17:00' });
+
+  it('on the Sunday the clocks go forward, 17:00 is 16:00 UTC', () => {
+    expect(at('2027-03-28T15:59:00Z')).toEqual({ sendDate: '2027-03-28', periodStart: '2027-03-29' });
+    expect(at('2027-03-28T16:00:00Z')).toEqual({ sendDate: '2027-04-04', periodStart: '2027-04-05' });
+  });
+
+  it('on the Sunday the clocks go back, 17:00 is 17:00 UTC', () => {
+    expect(at('2027-10-31T16:59:00Z')).toEqual({ sendDate: '2027-10-31', periodStart: '2027-11-01' });
+    expect(at('2027-10-31T17:00:00Z')).toEqual({ sendDate: '2027-11-07', periodStart: '2027-11-08' });
+  });
+});

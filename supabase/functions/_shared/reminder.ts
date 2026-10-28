@@ -1,5 +1,6 @@
 import { escapeHtml, multiline, safeHref } from './html.ts';
 import type { RenderedMessage } from './message.ts';
+import { zoneNote } from './time.ts';
 
 // The day-before reminder: one email for each person listed on an activity, addressed to them
 // alone. External contacts have no login, so their copy has no link into the app.
@@ -12,6 +13,7 @@ export type ReminderDetails = {
   start_time: string | null; // HH:MM:SS; null = all day
   end_time: string | null;
   timezone: string;
+  starts_at: string; // the instant (ISO), for the office-time equivalent
   location: string | null;
   meeting_url: string | null;
   contact_name: string | null;
@@ -37,14 +39,16 @@ function utcDate(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00Z`);
 }
 
-// "Tuesday 6 March 2035, 10:00–11:30", with the time zone if it is not the office's. (The year is
-// added by hand: with it, Intl's punctuation differs between runtimes.)
+// "Tuesday 6 March 2035, 10:00–11:30"; for an activity in another time zone, also the zone and the
+// office-time equivalent. (The year is added by hand: with it, Intl's punctuation differs between
+// runtimes.)
 function whenLabel(details: ReminderDetails, officeTimezone: string): string {
   const date = `${shortDate.format(utcDate(details.activity_date))} ${details.activity_date.slice(0, 4)}`;
   if (!details.start_time) return `${date} (all day)`;
   const start = details.start_time.slice(0, 5);
   const range = details.end_time ? `${start}–${details.end_time.slice(0, 5)}` : start;
-  return `${date}, ${range}${details.timezone === officeTimezone ? '' : ` (${details.timezone})`}`;
+  const note = zoneNote({ timezone: details.timezone, activityDate: details.activity_date, startsAt: details.starts_at, officeTimezone });
+  return `${date}, ${range}${note}`;
 }
 
 export function renderReminder(input: {
@@ -56,8 +60,10 @@ export function renderReminder(input: {
   const { officeName, officeTimezone, appUrl, details } = input;
   const day = shortDate.format(utcDate(details.activity_date));
   const title = details.title.replace(/\s+/g, ' ').trim(); // a subject is a single line
+  // The activity's own clock time, with its zone when that is not the office's.
+  const zone = details.timezone === officeTimezone ? '' : ` (${details.timezone})`;
   const subject = details.start_time
-    ? `Reminder: ${title}, ${day} at ${details.start_time.slice(0, 5)}`
+    ? `Reminder: ${title}, ${day} at ${details.start_time.slice(0, 5)}${zone}`
     : `Reminder: ${title}, ${day}`;
 
   const contact = [details.contact_name, details.contact_phone, details.contact_email].filter(Boolean).join(', ');

@@ -12,6 +12,7 @@ function details(overrides: Partial<ReminderDetails> = {}): ReminderDetails {
     start_time: '10:00:00',
     end_time: '11:30:00',
     timezone: 'Africa/Lagos',
+    starts_at: '2035-03-06T09:00:00Z', // 10:00 in Lagos (UTC+1)
     location: 'Board room',
     meeting_url: null,
     contact_name: null,
@@ -60,9 +61,23 @@ describe('renderReminder', () => {
     expect(allDay.text).toContain('When: Tuesday 6 March 2035 (all day)');
   });
 
-  it('shows the time zone when the activity is not in office time', () => {
-    const london = renderReminder({ ...base, details: details({ timezone: 'Europe/London', end_time: null }) });
-    expect(london.text).toContain('When: Tuesday 6 March 2035, 10:00 (Europe/London)');
+  it('shows the time zone, and the office time, when the activity is not in office time', () => {
+    // 10:00 in London in March 2035 (GMT, before the clocks change) is 11:00 in Lagos.
+    const london = renderReminder({
+      ...base,
+      details: details({ timezone: 'Europe/London', end_time: null, starts_at: '2035-03-06T10:00:00Z' }),
+    });
+    expect(london.subject).toBe('Reminder: Board meeting, Tuesday 6 March at 10:00 (Europe/London)');
+    expect(london.text).toContain('When: Tuesday 6 March 2035, 10:00 (Europe/London time; starts 11:00 Africa/Lagos time)');
+  });
+
+  it("follows London's clock change for the office time", () => {
+    // Monday 2 April 2035 is after the change (BST, UTC+1): 10:00 in London is 10:00 in Lagos.
+    const summer = renderReminder({
+      ...base,
+      details: details({ timezone: 'Europe/London', end_time: null, activity_date: '2035-04-02', starts_at: '2035-04-02T09:00:00Z' }),
+    });
+    expect(summer.text).toContain('When: Monday 2 April 2035, 10:00 (Europe/London time; starts 10:00 Africa/Lagos time)');
   });
 
   it('includes the details, preparation, meeting link and contact person when given', () => {
