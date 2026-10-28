@@ -491,6 +491,16 @@ If a dispatcher dies mid-send, its lease expires. The job is re-claimed and rese
 - **Retryable:** network or timeout, HTTP 429 (respect `Retry-After`), 5xx, and `409 concurrent_idempotent_requests`. Backoff is 1 → 5 → 15 → 60 → 180 min, capped at `expires_at`.
 - **Non-retryable:** 4xx validation such as an invalid address. Also 401/403 (bad API key: alert admins). Also `409 invalid_idempotent_request` (a payload mismatch, which shouldn't happen with frozen payloads, so it's flagged).
 - **Every attempt writes a `notification_logs` row** with status code and error. Permanent failures go into a rate-limited alert email to admins and a red badge on the dashboard.
+- **Implemented in stage 5b** (`_shared/resend.ts`, checked against resend.com/docs on 2026-10-28). The alert email and badge are not built yet.
+  - **The request:** `POST https://api.resend.com/emails` with `Authorization: Bearer`, a `User-Agent` (Resend refuses requests without one), and `Idempotency-Key = dedupe_key` (at most 200 characters by constraint; Resend allows 256). The body has one `to` address, `subject`, `html`, `text` and, when set, `reply_to`. The sender is `<email_from_name> <EMAIL_FROM_ADDRESS>`, quoted when the name contains RFC 5322 specials. The provider stops waiting after 10 s.
+  - **Error codes:** Resend's error body is `{ statusCode, name, message }`. `name` becomes `last_error_code`; a body that isn't JSON gives `http_<status>`.
+    - **Retryable:** any 5xx, network errors, timeouts, a 2xx without an id, `rate_limit_exceeded`, `daily_quota_exceeded` (resets at midnight UTC), `concurrent_idempotent_requests` and `resource_locked`. `Retry-After` (seconds or an HTTP date) is passed to `complete_notification_job`, which waits for whichever is longer, that or the backoff.
+    - **Permanent:** everything else, including `monthly_quota_exceeded` and `invalid_idempotent_request`.
+  - **Configuration:** the secrets `RESEND_API_KEY` and `EMAIL_FROM_ADDRESS`. If the key is set but the address is missing, everything is only logged and the run reports a warning. `RESEND_API_URL` exists only so tests can point at a fake.
+  - **What the payload covers:** the content is frozen at the first attempt. The sender name, reply-to, test banner and test address are applied at each send. If an admin changes one of those between a crash and the retry, Resend answers `invalid_idempotent_request` and the job fails rather than sending twice.
+  - **Verified** by `tests/integration/resend.test.ts`. It uses a fake Resend that implements the documented idempotency rules, and the real dispatcher run with Deno against the local database.
+    - **The crash test** holds the first answer back, kills the dispatcher after the fake has accepted, lets the lease run out, then reruns. The second request carries the same key and an identical body, the fake still holds one email, and the job ends `sent` with the first email's id after 2 attempts.
+    - **Mutation check:** making the payload differ per attempt fails that test.
 
 ### 7.6 Outage and recovery behaviour
 
@@ -509,6 +519,26 @@ If a dispatcher dies mid-send, its lease expires. The job is re-claimed and rese
 - `delivery_status` is updated from Resend webhooks (`email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed`, `email.suppressed`).
 - The webhook function needs the **raw body** to verify the Svix signature (`svix-id`, `svix-timestamp`, `svix-signature`). Redeliveries are de-duplicated on `svix-id`.
 - Open and click tracking stay **off**. They aren't needed, and leaving them off is better for privacy.
+- **Implemented in stage 5c** (checked against resend.com/docs/webhooks and docs.svix.com on 2026-10-28):
+  - **`resend-webhook` Edge Function** (`verify_jwt = false`, since Resend has no Supabase sign-in). It reads the raw body, refuses bodies over 256 KB, and verifies the Svix signature before parsing anything (`_shared/webhook.ts`):
+    - The signed content is `id.timestamp.body`, signed with HMAC-SHA256 under the base64 key after `whsec_`.
+    - Any `v1,` entry in `svix-signature` may match, compared in constant time.
+    - The timestamp must be within ±5 min, which stops replays.
+    - It answers 401 for a bad or stale signature, and 500 if the secret is missing or the database fails, so Resend retries (for up to about a day). Signed events that aren't `email.*` are acknowledged and ignored.
+  - **`record_delivery_event()`** (migration `20261028090000_delivery_webhooks.sql`, service role only):
+    - Logs the report in `notification_logs`, with `provider_event_id = svix-id`. That column is unique, so a redelivered report is recorded once and answered `duplicate`.
+    - Matches the message on `(provider, provider_message_id)`. A report with no match is logged with no job (`unknown_message`) and cleaned up after 30 days.
+    - Moves `delivery_status` forward only, by `delivery_status_rank`: unknown < delayed < delivered < bounced = failed = suppressed < complained. Reports can therefore arrive in any order. `delivery_updated_at` is Resend's event time.
+    - Bounce, failure and suppression reasons are kept as the log's `error_code` and `error_message`.
+  - **Admin:** delivery problems are shown in red, a **Not delivered** filter lists them, and each message's details list every report with its reason.
+  - **Known gap:** if Resend accepts a message but the dispatcher crashes before saving the email id, reports that arrive before the retry saves it are logged as `unknown_message`. The retry still records the same id, so later reports match.
+  - **Local testing:** `npm run webhook:forward` plus a `cloudflared` quick tunnel (README). The tunnel reaches only the forwarder, never the whole local API.
+  - **Verified:**
+    - 18 pgTAP tests (test 12).
+    - Unit tests, including Svix's published signature example.
+    - `tests/integration/webhook.test.ts`: real signed requests through the gateway; unsigned, wrong, stale and tampered requests are refused.
+    - A browser test of the Not delivered view.
+    - **Mutation check:** with the signature check disabled (and the Edge Runtime restarted), the integration tests fail.
 
 ### 7.8 Test-mode safety ("test mode cannot accidentally send real notifications")
 
@@ -520,7 +550,9 @@ If a dispatcher dies mid-send, its lease expires. The job is re-claimed and rese
 | `live` | `"true"` | Real recipients |
 
 - `NOTIFICATIONS_LIVE` is set **only** in the production project's function secrets. Local and staging never have it, and the code defaults to the `log` provider when no Resend key is present.
-- "Send test to me" always sends to the acting admin's own address and nothing else.
+- "Send test to me" always sends to the acting admin's own address and nothing else. This holds in test mode too, since stage 5b; before that, 4c redirected it to the test address.
+- **Reserved test domains** (RFC 2606/6761: `example.com/.net/.org`, `.example`, `.test`, `.invalid`, `localhost`) never reach the provider, in any mode. Messages to them are only logged, so local and CI test data can't bounce against the sender's reputation.
+- The per-message decision (address, Resend or log, test marking) is `routeMessage()` in `_shared/mode.ts`.
 - Unit tests cover this whole matrix.
 
 ### 7.9 Provider interface and WhatsApp readiness

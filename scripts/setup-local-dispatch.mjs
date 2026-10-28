@@ -1,9 +1,11 @@
 // LOCAL DEVELOPMENT ONLY: gives the notification dispatcher a shared secret and tells the
-// database (Vault) where to call it, so Supabase Cron can run it.
+// database (Vault) where to call it, so Supabase Cron can run it. Also gives the resend-webhook
+// function a placeholder signing secret, so its tests can sign requests; to receive real reports
+// from Resend, replace it with the webhook's own secret (see README).
 //
 //   npm run dispatch:setup
 //
-// Creates supabase/functions/.env (git-ignored) if needed, reusing an existing secret.
+// Creates supabase/functions/.env (git-ignored) if needed, reusing existing secrets.
 // Production is configured separately (Phase 7), with `supabase secrets set` and Vault.
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -28,9 +30,13 @@ if (!secret) {
   lines = lines.filter((line) => !line.startsWith('DISPATCH_SECRET='));
   lines.push(`DISPATCH_SECRET=${secret}`);
   if (!lines.some((line) => line.startsWith('APP_URL='))) lines.push('APP_URL=http://localhost:3000');
-  writeFileSync(ENV_FILE, `${lines.join('\n')}\n`);
   created = true;
 }
+if (!lines.some((line) => line.startsWith('RESEND_WEBHOOK_SECRET='))) {
+  lines.push(`RESEND_WEBHOOK_SECRET=whsec_${randomBytes(32).toString('base64')}`);
+  created = true;
+}
+if (created) writeFileSync(ENV_FILE, `${lines.join('\n')}\n`);
 
 const supabase = createClient(supabaseUrl, process.env.SUPABASE_SECRET_KEY ?? '', {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -43,5 +49,5 @@ if (error) {
 
 console.log(`Dispatcher configured: Supabase Cron will call ${DISPATCH_URL} every 5 minutes.`);
 if (created) {
-  console.log(`Created ${ENV_FILE}. Restart the local stack so the function sees it: npm run db:stop && npm run db:start`);
+  console.log(`Updated ${ENV_FILE}. Restart the local stack so the functions see it: npm run db:stop && npm run db:start`);
 }

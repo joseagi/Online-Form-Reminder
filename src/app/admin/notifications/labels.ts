@@ -1,5 +1,5 @@
 import { formatDate } from '@/lib/activities/format';
-import type { JobRow } from '@/lib/admin/data';
+import { UNDELIVERED_STATUSES, type JobRow } from '@/lib/admin/data';
 
 export const STATUS_LABELS: Record<JobRow['status'], string> = {
   pending: 'Waiting',
@@ -39,4 +39,12 @@ export function deliveryLabel(job: Pick<JobRow, 'status' | 'delivery_status' | '
   if (job.status !== 'sent') return '';
   if (job.provider === 'log') return 'Logged only (test)';
   return DELIVERY_LABELS[job.delivery_status] ?? job.delivery_status;
+}
+
+// Red when the provider reported that the message did not get through.
+export function deliveryStyle(job: Pick<JobRow, 'status' | 'delivery_status'>): string {
+  if (job.status !== 'sent') return '';
+  if ((UNDELIVERED_STATUSES as readonly string[]).includes(job.delivery_status)) return 'text-red-700 dark:text-red-400';
+  if (job.delivery_status === 'delayed') return 'text-amber-700 dark:text-amber-400';
+  return '';
 }

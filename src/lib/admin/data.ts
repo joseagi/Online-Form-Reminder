@@ -45,7 +45,12 @@ export const JOB_FILTERS = {
   waiting: ['pending', 'processing'],
   skipped: ['skipped', 'cancelled'],
   failed: ['failed'],
+  // Accepted by the provider, then reported as not delivered (by its webhooks).
+  undelivered: ['sent'],
 } as const;
+
+// Delivery reports that mean the message did not reach (or was refused by) the recipient.
+export const UNDELIVERED_STATUSES = ['bounced', 'complained', 'failed', 'suppressed'] as const;
 export type JobFilter = keyof typeof JOB_FILTERS;
 
 const JOB_COLUMNS =
@@ -79,6 +84,7 @@ export async function listNotificationJobs(filter: JobFilter, limit = JOB_LIST_L
   let query = supabase.from('notification_jobs').select(JOB_COLUMNS);
   const statuses = JOB_FILTERS[filter];
   if (statuses) query = query.in('status', [...statuses]);
+  if (filter === 'undelivered') query = query.in('delivery_status', [...UNDELIVERED_STATUSES]);
   const { data, error } = await query
     .order('scheduled_for', { ascending: filter === 'waiting' })
     .order('id')

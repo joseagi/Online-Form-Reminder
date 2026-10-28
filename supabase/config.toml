@@ -403,6 +403,10 @@ deno_version = 2
 [functions.dispatch-notifications]
 verify_jwt = false
 
+# Called by Resend, which has no Supabase sign-in: it checks the webhook's Svix signature instead.
+[functions.resend-webhook]
+verify_jwt = false
+
 [analytics]
 # Off locally: on Windows it needs the Docker daemon exposed over TCP, and logs aren't needed for dev.
 enabled = false

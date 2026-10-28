@@ -8,7 +8,7 @@ import { saveSettings, type SettingsState } from './actions';
 
 const MODE_HELP = {
   off: 'Nothing is sent. Messages that fall due are skipped and logged.',
-  test: 'Nothing reaches real recipients. Messages go to the test address below or, without one, are only logged.',
+  test: 'Nothing reaches real recipients. Messages go to the test address below or, without one, are only logged. "Send test to me" still goes to you.',
   live: 'Real messages to real people. Takes effect only on a server set up for live sending; otherwise the system stays in test mode and says so on the Notifications page.',
 } as const;
 

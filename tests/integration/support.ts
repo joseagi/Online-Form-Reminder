@@ -14,9 +14,12 @@ export const admin = createClient(SUPABASE_URL, process.env.SUPABASE_SECRET_KEY!
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+type JobRow = Record<string, unknown> & { status: string };
+
 // Calls the dispatcher. secret: omitted = the real one, null = send no secret header at all.
-export async function dispatch({ secret = SECRET, method = 'POST' }: { secret?: string | null; method?: string } = {}) {
-  const response = await fetch(FUNCTION_URL, {
+// url: another instance of the dispatcher (e.g. one run directly with Deno).
+export async function dispatch({ secret = SECRET, method = 'POST', url = FUNCTION_URL }: { secret?: string | null; method?: string; url?: string } = {}) {
+  const response = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-dispatch-secret': secret } : {}) },
     body: method === 'POST' ? '{}' : undefined,
@@ -40,13 +43,16 @@ export async function finishedJob(id: string) {
   throw new Error(`job ${id} did not finish`);
 }
 
-// Runs the dispatcher until the job is finished. Other due jobs in the local queue may be ahead of
-// it in a run's batch, so one call is not always enough.
-export async function dispatchUntilFinished(id: string) {
+// Runs the dispatcher until the job is finished (or `until` holds). Other due jobs in the local
+// queue may be ahead of it in a run's batch, so one call is not always enough.
+export async function dispatchUntilFinished(
+  id: string,
+  { url, until = (job) => FINISHED(job.status) }: { url?: string; until?: (job: JobRow) => boolean } = {},
+) {
   for (let run = 0; run < 10; run++) {
-    await dispatch();
+    await dispatch({ url });
     const { data } = await admin.from('notification_jobs').select('*').eq('id', id).single();
-    if (data && FINISHED(data.status)) return data;
+    if (data && until(data)) return data;
   }
   throw new Error(`job ${id} was not finished after 10 dispatcher runs`);
 }

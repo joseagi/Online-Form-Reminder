@@ -55,9 +55,13 @@ beforeAll(async () => {
   // restart, which can take a while on a slow connection. (Deployed functions are pre-bundled.)
   await dispatch({ secret: 'warm-up' });
 
-  const { data: settings } = await admin.from('system_settings').select('notification_mode, weekly_summary_send_if_empty').single();
+  const { data: settings } = await admin
+    .from('system_settings')
+    .select('notification_mode, weekly_summary_send_if_empty, test_redirect_email')
+    .single();
   settingsBefore = settings!;
-  await admin.from('system_settings').update({ weekly_summary_send_if_empty: false }).eq('id', true);
+  // No test address: in test mode messages are then only logged, even where Resend is configured.
+  await admin.from('system_settings').update({ weekly_summary_send_if_empty: false, test_redirect_email: null }).eq('id', true);
 
   const { data: user, error } = await admin.auth.admin.createUser({
     email: `int-${run}@example.com`,

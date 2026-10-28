@@ -89,6 +89,40 @@ export async function updateSettings(values: Record<string, unknown>) {
   if (error) throw new Error(`updating settings failed: ${error.message}`);
 }
 
+// A message Resend accepted and then reported as bounced, recorded the way the resend-webhook
+// function records it. (The address is never contacted: nothing is sent.)
+export async function bouncedMessage(destination: string, reason: string): Promise<string> {
+  const providerId = `e2e-${destination}`;
+  const { data, error } = await admin
+    .from('notification_jobs')
+    .insert({
+      kind: 'test',
+      channel: 'email',
+      dedupe_key: `test:email:e2e-${destination}`,
+      destination,
+      scheduled_for: new Date().toISOString(),
+      run_after: new Date().toISOString(),
+      status: 'sent',
+      provider: 'resend',
+      provider_message_id: providerId,
+      accepted_at: new Date().toISOString(),
+      send_mode: 'test',
+    })
+    .select('id')
+    .single();
+  if (error) throw new Error(`creating the message failed: ${error.message}`);
+  const recorded = await admin.rpc('record_delivery_event', {
+    p_provider: 'resend',
+    p_event_id: `msg_e2e_${destination}`,
+    p_event_type: 'email.bounced',
+    p_provider_message_id: providerId,
+    p_error_code: 'Permanent',
+    p_error_message: reason,
+  });
+  if (recorded.error) throw new Error(`recording the bounce failed: ${recorded.error.message}`);
+  return data.id;
+}
+
 export async function signIn(page: Page, email: string, password: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);

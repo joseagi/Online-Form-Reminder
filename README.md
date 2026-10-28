@@ -27,8 +27,8 @@ Internal web app for an office of up to about 20 staff:
 | 4b. Dispatcher Edge Function (template, log-only provider, test-mode gate) and Supabase Cron schedule | Done |
 | 4c. Admin: summary settings, recipients, preview, test send, notification log | Done. 237 pgTAP tests passing. **Phase 4 complete** |
 | 5a. Day-before reminders: planning, sync with activity changes, send-time checks, template (logged, not emailed) | Done. 268 pgTAP tests passing |
-| 5b. Resend email provider: idempotency keys, error handling, no-duplicate crash test | Planned |
-| 5c. Resend delivery webhooks (signed): delivered, bounced, complained | Planned |
+| 5b. Resend email provider: idempotency keys, error handling, no-duplicate crash test | Done. 157 unit, 20 integration tests passing |
+| 5c. Resend delivery webhooks (signed): delivered, bounced, complained | Done. 286 pgTAP, 169 unit, 25 integration, 24 browser tests passing |
 | 5d. Admin: retry and cancel, reminder settings, reminders on the activity page | Planned |
 
 ## Prerequisites (Windows)
@@ -73,9 +73,10 @@ Locally, no email leaves your machine: invitations and password-reset emails are
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate Next.js route types, then `tsc --noEmit` |
 | `npm test` | Unit tests (Vitest: `src/**/*.test.ts` and the Edge Functions' pure modules) |
-| `npm run test:integration` | Tests against the running local stack: the `dispatch-notifications` and `summary-preview` Edge Functions (`tests/integration/`). Needs `npm run dispatch:setup` once |
+| `npm run test:integration` | Tests against the running local stack: the `dispatch-notifications`, `summary-preview` and `resend-webhook` Edge Functions (`tests/integration/`). The Resend tests run the dispatcher directly with Deno (port 8000) against a fake Resend, so no email is sent. Needs `npm run dispatch:setup` once |
 | `npm run functions:check` | Type-check the Edge Functions with Deno |
-| `npm run dispatch:setup` | Local only: give the dispatcher a secret (`supabase/functions/.env`) and tell the database where to call it, so Supabase Cron runs it every 5 minutes |
+| `npm run dispatch:setup` | Local only: give the dispatcher a secret (`supabase/functions/.env`) and tell the database where to call it, so Supabase Cron runs it every 5 minutes. Also adds a placeholder `RESEND_WEBHOOK_SECRET` if there is none |
+| `npm run webhook:forward` | Local only: pass Resend's delivery reports from a tunnel to the `resend-webhook` function, and nothing else (see *Delivery reports locally*) |
 | `npm run e2e` | Browser tests (Playwright, `e2e/`). Needs the local stack running; builds and starts the app on port 3000 unless it's already running. First time only: `npx playwright install chromium`. Or use the Edge already on Windows: `$env:PLAYWRIGHT_CHANNEL='msedge'; npm run e2e`. The tests leave `e2e-…@example.com` users in the local database; `npm run db:reset` clears them |
 | `npm run admin:create -- --email … --name "…"` | Create the first administrator for an environment (uses `SUPABASE_SECRET_KEY`) |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` after a schema change |
@@ -98,10 +99,41 @@ The local stack leaves out Supabase Studio. The keys `db:start` prints are the s
   - Each person's reminder follows the activity as it changes: a new time, someone removed, cancelled or completed, reminders turned off. It is checked again just before sending.
   - Changing only the details changes nothing, because the message is written when it's sent.
   - The timings are settings (`reminder_lead`, `date_only_reminder_time`, `reminder_min_notice`). Stage 5d puts them on the Settings page.
-- **Nothing is delivered yet.** The dispatcher only has a log-only provider; stage 5b adds the real email provider. Real recipients need **both** `notification_mode = live` (set by an admin) **and** `NOTIFICATIONS_LIVE=true` on the server (production only).
+- **Email goes through Resend** once the function has a key (see *Sending real email locally* below). Without one, every message is only logged. Real recipients need **both** `notification_mode = live` (set by an admin) **and** `NOTIFICATIONS_LIVE=true` on the server (production only).
+- **In test mode** messages go only to the test address, marked [TEST]. Without a test address they are only logged. **Send test to me** goes to the administrator who asked.
+- **Addresses on reserved test domains** (`example.com`, `.test`, `.example`, `.invalid`, `localhost`) are never passed to Resend; those messages are only logged. Test accounts such as `admin@office.test` and the `e2e-…@example.com` users therefore never cause bounces.
+- **No duplicates:** each message is sent with its job key as Resend's `Idempotency-Key` and with the content frozen at the first attempt. A retry after a crash returns Resend's first answer instead of sending again. Temporary failures (network, timeouts, 429, 5xx) are retried with growing waits, honouring `Retry-After`; rejections (invalid address, bad key) are marked failed.
 - **One-time setup:** run `npm run dispatch:setup`, then restart the stack (`npm run db:stop`, then `npm run db:start`). The restart lets the function read its new secret.
 - **To see what happened:** open **Admin → Notifications** (below). Underneath, it reads `public.notification_jobs` (each message, its rendered content and status) and `public.notification_logs` (every attempt, plus `run.started` / `run.finished` heartbeats).
 - **After adding a new Edge Function** (a new folder in `supabase/functions/`), restart the stack. The local Edge Runtime only finds functions when it starts; until then, calls return 404 "Function not found". Your data is kept.
+- **After changing a function's code or secrets**, restart too. Edits aren't reliably picked up while it runs. Restarting just the Edge Runtime is quicker: `docker restart supabase_edge_runtime_office-reminders`.
+
+### Sending real email locally (Resend)
+
+1. In Resend, create an API key with **Sending access** (resend.com/api-keys).
+2. Add two lines to `supabase/functions/.env` (git-ignored; never commit the key):
+   ```
+   RESEND_API_KEY=re_...
+   EMAIL_FROM_ADDRESS=onboarding@resend.dev
+   ```
+   Until a domain is verified in Resend, `onboarding@resend.dev` can deliver **only to the address you signed up to Resend with**.
+3. Restart the stack so the function reads them: `npm run db:stop`, then `npm run db:start`.
+4. In **Admin → Settings**, choose **test** mode and set the **test address** to your Resend sign-up address.
+
+Everything due then goes to that inbox, marked [TEST], including reminders for the e2e tests' activities, so turn the test address off (or the mode to **off**) when you don't want them. The free plan allows 100 emails a day. To try **Send test to me**, sign in as an administrator whose own address is your Resend sign-up address; `admin@office.test` is a reserved test address and is only logged.
+
+### Delivery reports locally (Resend webhooks)
+
+Resend reports what happened to each message (delivered, delayed, bounced, marked as spam, failed, suppressed) by calling the `resend-webhook` Edge Function. Each report is signed, and the function refuses any it can't verify with `RESEND_WEBHOOK_SECRET`. Resend can't reach your computer directly, so locally a tunnel is needed. The tunnel only leads to a small forwarder that passes on webhook calls and nothing else; a tunnel to port 54321 would publish the whole local Supabase API, whose keys are the well-known local defaults.
+
+1. Install Cloudflare's tunnel tool once (no account needed): `winget install --id Cloudflare.cloudflared`
+2. In one terminal: `npm run webhook:forward`
+3. In another: `cloudflared tunnel --url http://127.0.0.1:54399`. It prints an `https://….trycloudflare.com` address, which changes each time you start it.
+4. In Resend, go to **Webhooks → Add webhook**. Set the URL to `https://….trycloudflare.com/resend-webhook` and choose the events `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed` and `email.suppressed`.
+5. Copy the webhook's **signing secret** (`whsec_…`) over the placeholder `RESEND_WEBHOOK_SECRET` in `supabase/functions/.env`, then restart the stack (`npm run db:stop`, then `npm run db:start`).
+6. Send something (for example a reminder in test mode). Within a minute the forwarder prints the report, and **Admin → Notifications** shows **Delivered**. To see a bounce, set the test address to `bounced@resend.dev`.
+
+When you're done, stop both, and delete or disable the webhook in Resend: it will keep retrying a dead address for about a day, then disable itself.
 
 ### Admin screens
 
@@ -111,11 +143,11 @@ Administrators see an **Admin** link in the header. Staff who open these address
 |---|---|
 | **Settings** (`/admin/settings`) | Office name, weekly summary on/off, Sunday send time, how late it may still go out, send-if-empty, notification mode (off / test / live), test address, sender name, reply-to |
 | **Weekly summary** (`/admin/summary`) | When the next summary goes out and to how many people, a preview of any week (the real template, via the `summary-preview` Edge Function), who receives it (staff and shared mailboxes), and **Send test to me** |
-| **Notifications** (`/admin/notifications`) | Messages with their status: weekly summaries, test messages and reminders (named after their activity). **Waiting** lists the next due first; the other filters list the latest due first. Up to 100 at a time. Also the scheduler's last run (a warning if it's more than 15 minutes old), and per-message details: content as sent, every attempt, and a link to the reminder's activity |
+| **Notifications** (`/admin/notifications`) | Messages with their status: weekly summaries, test messages and reminders (named after their activity). **Waiting** lists the next due first; the other filters list the latest due first. **Not delivered** lists messages Resend reported as bounced, marked as spam, failed or suppressed. Up to 100 at a time. Also the scheduler's last run (a warning if it's more than 15 minutes old), and per-message details: content as sent, every attempt, and a link to the reminder's activity |
 | **Staff** (`/admin/staff`) | Invite, change role, deactivate |
 
-- **Send test to me** queues one test-marked summary of the coming week to your own address and asks the dispatcher to run straight away. In test mode it goes to the test address instead; when notifications are off, the button says so and sends nothing. You can send up to 5 an hour.
-- **Nothing reaches a real inbox** until Phase 5 adds the email provider. Until then, a sent message shows as "Logged only (test)".
+- **Send test to me** queues one test-marked summary of the coming week to your own address and asks the dispatcher to run straight away, in test mode too. When notifications are off, the button says so and sends nothing. You can send up to 5 an hour.
+- **Delivery** shows what Resend reported: "Not confirmed" until a report arrives, then "Delivered", "Delayed", "Bounced", "Marked as spam", "Failed" or "Suppressed". Problems are shown in red, and the **Not delivered** filter lists them. A message's details show each report, with the receiving server's reason for a bounce. A message that was only logged shows as "Logged only (test)".
 
 ### Database changes
 

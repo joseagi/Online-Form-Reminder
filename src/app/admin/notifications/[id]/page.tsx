@@ -8,7 +8,7 @@ import { getNotificationJob, getSettingsRow } from '@/lib/admin/data';
 import { STATUS_REASON_LABELS } from '@/lib/admin/settings';
 import { isUuid } from '@/lib/activities/schema';
 import { formatTimestamp } from '@/lib/activities/format';
-import { STATUS_LABELS, STATUS_STYLES, deliveryLabel, describeJob } from '../labels';
+import { STATUS_LABELS, STATUS_STYLES, deliveryLabel, deliveryStyle, describeJob } from '../labels';
 
 export const metadata: Metadata = { title: 'Notification · Office Activities' };
 
@@ -60,7 +60,9 @@ async function NotificationDetail({ params }: Pick<PageProps<'/admin/notificatio
         <Row label="Deadline">{at(job.expires_at)}</Row>
         <Row label="Attempts">{String(job.attempt_count)}</Row>
         <Row label="Accepted by provider">{at(job.accepted_at)}</Row>
-        <Row label="Delivery">{deliveryLabel(job)}</Row>
+        <Row label="Delivery">
+          {deliveryLabel(job) && <span className={deliveryStyle(job)} data-testid="delivery-status">{deliveryLabel(job)}</span>}
+        </Row>
         <Row label="Mode and provider">{[job.send_mode, job.provider].filter(Boolean).join(' · ')}</Row>
         <Row label="Provider message id">{job.provider_message_id}</Row>
         <Row label="Last error">{job.last_error_message}</Row>

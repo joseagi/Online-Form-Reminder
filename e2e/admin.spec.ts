@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  bouncedMessage,
   createActivityAs,
   createUser,
   readSettings,
@@ -134,7 +135,8 @@ test('"Send test to me" goes out straight away and shows up in the notification 
   await updateSettings({ notification_mode: 'test', test_redirect_email: testAddress });
   await page.reload();
   await page.getByRole('button', { name: 'Send test to me' }).click();
-  await expect(page.getByText(`Test queued for ${testAddress} (test mode sends everything to the test address).`)).toBeVisible();
+  // Even in test mode, a test goes to the administrator who asked for it, not to the test address.
+  await expect(page.getByText(`Test queued for ${admin.email}.`)).toBeVisible();
 
   // The dispatcher is asked to run immediately; allow it a little time. (The "Sent" filter keeps
   // summaries planned for coming Sundays, which head the full list, out of the way.)
@@ -151,4 +153,18 @@ test('"Send test to me" goes out straight away and shows up in the notification 
   await row.first().getByRole('link', { name: /Details/ }).click();
   await expect(page.getByTestId('message-subject')).toContainText('the week ahead');
   await expect(page.getByTestId('notification-events')).toContainText('accepted');
+});
+
+test('a message Resend reports as bounced shows under "Not delivered", with the reason', async ({ page }) => {
+  const destination = uniqueEmail('bounce');
+  await bouncedMessage(destination, 'The mailbox does not exist.');
+
+  await signInAs(page, admin, '/admin/notifications?status=undelivered');
+  await expect(page.getByRole('link', { name: 'Not delivered' })).toHaveAttribute('aria-current', 'page');
+  const row = page.getByTestId('notification-row').filter({ hasText: destination });
+  await expect(row).toContainText('Bounced');
+
+  await row.getByRole('link', { name: /Details/ }).click();
+  await expect(page.getByTestId('delivery-status')).toHaveText('Bounced');
+  await expect(page.getByTestId('notification-events')).toContainText('email.bounced · The mailbox does not exist.');
 });

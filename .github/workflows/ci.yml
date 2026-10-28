@@ -54,8 +54,10 @@ jobs:
       - run: npm ci
 
       # Read by the local Edge Runtime when the stack starts.
-      - name: Give the dispatcher a throwaway secret
-        run: printf 'DISPATCH_SECRET=%s\nAPP_URL=http://localhost:3000\n' "$(openssl rand -hex 32)" > supabase/functions/.env
+      - name: Give the Edge Functions throwaway secrets
+        run: |
+          printf 'DISPATCH_SECRET=%s\nAPP_URL=http://localhost:3000\nRESEND_WEBHOOK_SECRET=whsec_%s\n' \
+            "$(openssl rand -hex 32)" "$(openssl rand -base64 32)" > supabase/functions/.env
 
       - name: Start local Supabase (applies every migration from scratch)
         run: npm run db:start
@@ -80,7 +82,7 @@ jobs:
 
       - name: Configure the dispatcher schedule (Vault)
         run: npm run dispatch:setup
-      - name: Dispatcher integration tests (Edge Function, log-only provider)
+      - name: Edge Function integration tests (dispatcher, fake Resend, signed webhooks)
         run: npm run test:integration
 
       - name: Install the test browser

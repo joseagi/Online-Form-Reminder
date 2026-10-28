@@ -72,12 +72,13 @@ beforeAll(async () => {
 
   const { data: settings } = await admin
     .from('system_settings')
-    .select('notification_mode, reminder_lead, reminder_min_notice')
+    .select('notification_mode, reminder_lead, reminder_min_notice, test_redirect_email')
     .single();
   settingsBefore = settings!;
+  // No test address, so the reminders are only logged (see dispatch.test.ts).
   await admin
     .from('system_settings')
-    .update({ notification_mode: 'test', reminder_lead: '24 hours', reminder_min_notice: '2 hours' })
+    .update({ notification_mode: 'test', reminder_lead: '24 hours', reminder_min_notice: '2 hours', test_redirect_email: null })
     .eq('id', true);
 
   [staffId, quietId] = await Promise.all([staffUser('staff'), staffUser('quiet')]);

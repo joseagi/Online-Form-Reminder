@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveGate } from './mode.ts';
+import { isReservedAddress, resolveGate, routeMessage } from './mode.ts';
 import { constantTimeEqual } from './security.ts';
 import { escapeHtml, safeHref } from './html.ts';
 
@@ -34,6 +34,55 @@ describe('resolveGate (test mode cannot accidentally send real notifications)', 
       action: 'send',
       mode: 'live',
     });
+  });
+});
+
+describe('routeMessage (who receives a message, and whether it is really sent)', () => {
+  const live = { action: 'send', mode: 'live' } as const;
+  const test = (redirectTo: string | null) => ({ action: 'send', mode: 'test', redirectTo, warning: null }) as const;
+  const reminder = { kind: 'day_before_reminder', destination: 'ada@office.dev' };
+  const ownTest = { kind: 'test', destination: 'admin@office.dev' };
+
+  it('sends live messages to their recipient', () => {
+    expect(routeMessage(live, reminder, true)).toEqual({ to: 'ada@office.dev', via: 'provider', markAsTest: false });
+  });
+
+  it('sends test-mode messages only to the test address', () => {
+    expect(routeMessage(test('qa@office.dev'), reminder, true)).toEqual({ to: 'qa@office.dev', via: 'provider', markAsTest: true });
+  });
+
+  it('only logs test-mode messages when there is no test address (never the real recipient)', () => {
+    expect(routeMessage(test(null), reminder, true)).toEqual({ to: 'ada@office.dev', via: 'log', markAsTest: true });
+    expect(routeMessage(test(''), reminder, true)).toMatchObject({ via: 'log' });
+  });
+
+  it('sends "Send test to me" to the administrator who asked, in test and live mode', () => {
+    expect(routeMessage(test('qa@office.dev'), ownTest, true)).toEqual({ to: 'admin@office.dev', via: 'provider', markAsTest: true });
+    expect(routeMessage(test(null), ownTest, true)).toEqual({ to: 'admin@office.dev', via: 'provider', markAsTest: true });
+    expect(routeMessage(live, ownTest, true)).toEqual({ to: 'admin@office.dev', via: 'provider', markAsTest: true });
+  });
+
+  it('only logs when no real provider is configured', () => {
+    for (const [gate, job] of [[test('qa@office.dev'), reminder], [test(null), ownTest], [live, reminder]] as const) {
+      expect(routeMessage(gate, job, false).via).toBe('log');
+    }
+  });
+
+  it('never hands an address on a reserved test domain to the provider', () => {
+    expect(routeMessage(test('qa@example.com'), reminder, true)).toMatchObject({ to: 'qa@example.com', via: 'log' });
+    expect(routeMessage(live, { kind: 'weekly_summary', destination: 'someone@staff.test' }, true)).toMatchObject({ via: 'log' });
+    expect(routeMessage(test(null), { kind: 'test', destination: 'admin@office.test' }, true)).toMatchObject({ via: 'log' });
+  });
+});
+
+describe('isReservedAddress', () => {
+  it('recognises the domains reserved for testing (RFC 2606 and 6761), and only those', () => {
+    for (const address of ['a@example.com', 'a@EXAMPLE.ORG', 'a@mail.example.net', 'a@office.test', 'a@x.example', 'a@x.invalid', 'a@localhost', 'a@example.com.']) {
+      expect(isReservedAddress(address), address).toBe(true);
+    }
+    for (const address of ['a@gmail.com', 'a@resend.dev', 'a@example.co.uk', 'a@myexample.com', 'a@test.ng', 'a@contest.org']) {
+      expect(isReservedAddress(address), address).toBe(false);
+    }
   });
 });
 

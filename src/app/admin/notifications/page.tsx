@@ -17,7 +17,7 @@ import { STATUS_REASON_LABELS } from '@/lib/admin/settings';
 import { formatTimestamp } from '@/lib/activities/format';
 import { firstParam } from '@/lib/forms';
 import { minutesSince } from '@/lib/time';
-import { STATUS_LABELS, STATUS_STYLES, deliveryLabel, describeJob } from './labels';
+import { STATUS_LABELS, STATUS_STYLES, deliveryLabel, deliveryStyle, describeJob } from './labels';
 
 export const metadata: Metadata = { title: 'Notifications · Office Activities' };
 
@@ -30,6 +30,7 @@ const FILTER_LABELS: Record<JobFilter, string> = {
   waiting: 'Waiting',
   skipped: 'Skipped or cancelled',
   failed: 'Failed',
+  undelivered: 'Not delivered',
 };
 
 export default function NotificationsPage({ searchParams }: PageProps<'/admin/notifications'>) {
@@ -109,7 +110,7 @@ async function NotificationsAdmin({ searchParams }: Pick<PageProps<'/admin/notif
                     )}
                   </td>
                   <td className="py-2 pr-4 text-zinc-600 dark:text-zinc-400">{job.send_mode ?? ''}</td>
-                  <td className="py-2 pr-4 text-zinc-600 dark:text-zinc-400">{deliveryLabel(job)}</td>
+                  <td className={`py-2 pr-4 ${deliveryStyle(job) || 'text-zinc-600 dark:text-zinc-400'}`}>{deliveryLabel(job)}</td>
                   <td className="py-2">
                     <Link href={`/admin/notifications/${job.id}`} className="underline" aria-label={`Details: ${describeJob(job)} to ${job.destination}`}>
                       Details

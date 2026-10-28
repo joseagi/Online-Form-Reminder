@@ -1,5 +1,5 @@
-// Provider-independent sending. Email goes through a NotificationProvider; WhatsApp (Phase 8) and
-// the real email provider (Phase 5) are further implementations of the same interface.
+// Provider-independent sending. Email goes through a NotificationProvider: Resend (resend.ts) or
+// the log provider below. WhatsApp (Phase 8) will be a further implementation of the same interface.
 
 export type OutboundMessage = {
   channel: 'email' | 'whatsapp';

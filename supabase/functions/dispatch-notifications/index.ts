@@ -4,12 +4,14 @@
 //   2. claims due jobs (leases them, so concurrent runs never share a job),
 //   3. builds each message (rendered once, then frozen so retries resend the same payload);
 //      reminders are re-checked against the activity on every attempt,
-//   4. sends it through the provider chosen by the test-mode gate,
+//   4. sends it to the address and through the provider chosen by the test-mode gate (Resend, or
+//      only the log), with the job's dedupe key as the idempotency key,
 //   5. records the outcome, and logs run.started / run.finished as a heartbeat.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { markAsTest, type RenderedMessage } from '../_shared/message.ts';
-import { resolveGate, type Gate, type SettingsMode } from '../_shared/mode.ts';
+import { resolveGate, routeMessage, type Gate, type SettingsMode } from '../_shared/mode.ts';
 import { LogProvider, type NotificationProvider } from '../_shared/providers.ts';
+import { resendFromEnv } from '../_shared/resend.ts';
 import { renderReminder, type ReminderDetails } from '../_shared/reminder.ts';
 import { constantTimeEqual } from '../_shared/security.ts';
 import { renderWeeklySummary, type SummaryItem } from '../_shared/weekly-summary.ts';
@@ -47,6 +49,8 @@ type Counts = {
   // Shown to administrators: which mode this run used, and why if it wasn't the one selected.
   mode?: 'off' | 'test' | 'live';
   warning?: string | null;
+  // The email provider configured on this server ('log' when none is).
+  provider?: string;
 };
 
 // A summary that goes out more than this long after its scheduled time is marked as delayed.
@@ -113,16 +117,16 @@ async function dispatch(supabase: SupabaseClient, runId: string, counts: Counts)
     .single<Settings>();
   if (settingsError || !settings) throw new Error(`settings unavailable: ${settingsError?.message}`);
 
-  // Phase 5 adds the real email provider; until then every message goes to the log provider.
-  const realProvider: NotificationProvider | null = null;
+  const resend = resendFromEnv((name) => Deno.env.get(name));
   const gate = resolveGate({
     settingsMode: settings.notification_mode,
     notificationsLiveEnv: Deno.env.get('NOTIFICATIONS_LIVE'),
-    hasRealProvider: realProvider !== null,
+    hasRealProvider: resend.provider !== null,
     testRedirectEmail: settings.test_redirect_email,
   });
   counts.mode = gate.action === 'skip' ? 'off' : gate.mode;
-  counts.warning = gate.action === 'send' && gate.mode === 'test' ? gate.warning : null;
+  counts.warning = [gate.action === 'send' && gate.mode === 'test' ? gate.warning : null, resend.warning].filter(Boolean).join(' ') || null;
+  counts.provider = resend.provider?.name ?? 'log';
   if (counts.warning) console.warn(counts.warning);
 
   const claimed = await supabase.rpc('claim_notification_jobs', { p_run_id: runId, p_limit: settings.dispatch_batch_size });
@@ -131,7 +135,7 @@ async function dispatch(supabase: SupabaseClient, runId: string, counts: Counts)
   counts.claimed = jobs.length;
 
   const summaries = new Map<string, Promise<SummaryItem[]>>();
-  const context = { supabase, runId, settings, gate, provider: realProvider ?? new LogProvider(), summaries };
+  const context = { supabase, runId, settings, gate, provider: resend.provider, log: new LogProvider(), summaries };
 
   for (const job of jobs) {
     // One job's problem must not stop the others: it is retried later instead.
@@ -155,7 +159,9 @@ type Context = {
   runId: string;
   settings: Settings;
   gate: Gate;
-  provider: NotificationProvider;
+  // The real email provider, if this server has one; otherwise every message is only logged.
+  provider: NotificationProvider | null;
+  log: NotificationProvider;
   summaries: Map<string, Promise<SummaryItem[]>>;
 };
 
@@ -171,15 +177,15 @@ async function processJob(ctx: Context, job: Job): Promise<string> {
   const built = await buildMessage(ctx, job);
   if ('skip' in built) return complete(ctx, job, { p_outcome: 'skipped', p_reason: built.skip });
 
-  const testMode = ctx.gate.mode === 'test';
+  const route = routeMessage(ctx.gate, job, ctx.provider !== null);
   // Test requests are always labelled as tests, even when notifications are live.
-  const outgoing = testMode || job.kind === 'test' ? markAsTest(built.message, job.destination) : built.message;
-  const to = ctx.gate.mode === 'test' ? ctx.gate.redirectTo || job.destination : job.destination;
+  const outgoing = route.markAsTest ? markAsTest(built.message, job.destination) : built.message;
+  const provider = route.via === 'provider' && ctx.provider ? ctx.provider : ctx.log;
 
-  const result = await ctx.provider.send(
+  const result = await provider.send(
     {
       channel: 'email',
-      to,
+      to: route.to,
       ...outgoing,
       fromName: ctx.settings.email_from_name,
       replyTo: ctx.settings.email_reply_to,
@@ -190,14 +196,14 @@ async function processJob(ctx: Context, job: Job): Promise<string> {
   if (result.ok) {
     return complete(ctx, job, {
       p_outcome: 'sent',
-      p_provider: ctx.provider.name,
+      p_provider: provider.name,
       p_provider_message_id: result.providerMessageId,
       p_send_mode: ctx.gate.mode,
     });
   }
   return complete(ctx, job, {
     p_outcome: result.retryable ? 'retry' : 'failed',
-    p_provider: ctx.provider.name,
+    p_provider: provider.name,
     p_http_status: result.httpStatus ?? null,
     p_error_code: result.code,
     p_error_message: result.message,

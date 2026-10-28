@@ -75,9 +75,8 @@ export async function sendTestToMe(): Promise<FormState> {
   const { error } = await supabase.rpc('queue_test_notification');
   if (error) return { error: error.code === '22023' ? error.message : `The test could not be queued: ${error.message}` };
 
-  const redirect = settings.notification_mode === 'test' ? settings.test_redirect_email : null;
-  const destination = redirect ? `${redirect} (test mode sends everything to the test address)` : admin.email;
+  // A test always goes to the administrator who asked for it, also in test mode.
   return {
-    message: `Test queued for ${destination}. It normally appears on the Notifications page within a minute.`,
+    message: `Test queued for ${admin.email}. It normally appears on the Notifications page within a minute.`,
   };
 }
