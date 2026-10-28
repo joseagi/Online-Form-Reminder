@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
+import { ProblemBadge } from '@/components/problem-badge';
 
 const TABS = [
   { key: 'settings', href: '/admin/settings', label: 'Settings' },
@@ -23,6 +25,11 @@ export function AdminTabs({ current }: { current: (typeof TABS)[number]['key'] }
           }`}
         >
           {tab.label}
+          {tab.key === 'notifications' && (
+            <Suspense fallback={null}>
+              <ProblemBadge />
+            </Suspense>
+          )}
         </Link>
       ))}
     </nav>

@@ -136,6 +136,36 @@ export async function getActivityHistory(id: string): Promise<HistoryEntry[]> {
   }));
 }
 
+export type ActivityReminder = {
+  id: string;
+  destination: string;
+  scheduled_for: string;
+  status: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled' | 'skipped';
+  status_reason: string | null;
+  provider: string | null;
+  delivery_status: string;
+  profile: { full_name: string } | null;
+  contact: { full_name: string } | null;
+};
+
+// The day-before reminders for an activity. RLS shows them to administrators and to people who
+// can edit the activity; everyone else gets none. Reminders replaced because the activity moved
+// to a new time are left out: the reminder for the new time is shown instead.
+export async function getActivityReminders(id: string): Promise<ActivityReminder[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('notification_jobs')
+    .select('id, destination, scheduled_for, status, status_reason, provider, delivery_status, profile:profiles(full_name), contact:contacts(full_name)')
+    .eq('activity_id', id)
+    .eq('kind', 'day_before_reminder')
+    .or('status.neq.cancelled,status_reason.neq.rescheduled')
+    .order('scheduled_for', { ascending: false })
+    .order('destination')
+    .returns<ActivityReminder[]>();
+  if (error) throw new Error(`Could not load the reminders: ${error.message}`);
+  return data;
+}
+
 export async function canEditActivity(id: string): Promise<boolean> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc('can_edit_activity', { p_activity_id: id });

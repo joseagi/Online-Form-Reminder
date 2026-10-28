@@ -3,7 +3,9 @@ import {
   bouncedMessage,
   createActivityAs,
   createUser,
+  failedMessage,
   readSettings,
+  runPlanner,
   signIn,
   uniqueEmail,
   updateSettings,
@@ -160,11 +162,95 @@ test('a message Resend reports as bounced shows under "Not delivered", with the 
   await bouncedMessage(destination, 'The mailbox does not exist.');
 
   await signInAs(page, admin, '/admin/notifications?status=undelivered');
-  await expect(page.getByRole('link', { name: 'Not delivered' })).toHaveAttribute('aria-current', 'page');
+  // Exact: the problem badge's text for screen readers also mentions "not delivered".
+  await expect(page.getByRole('link', { name: 'Not delivered', exact: true })).toHaveAttribute('aria-current', 'page');
   const row = page.getByTestId('notification-row').filter({ hasText: destination });
   await expect(row).toContainText('Bounced');
 
   await row.getByRole('link', { name: /Details/ }).click();
   await expect(page.getByTestId('delivery-status')).toHaveText('Bounced');
   await expect(page.getByTestId('notification-events')).toContainText('email.bounced · The mailbox does not exist.');
+});
+
+test('an administrator cancels a waiting reminder, the planner leaves it cancelled, and the cancel can be undone', async ({ page }) => {
+  const title = `Cancel check ${run}`;
+  const inTwoDays = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  const activityId = await createActivityAs(admin, { title, activity_date: inTwoDays, start_time: '10:00' }, [
+    { profile_id: admin.id, role: 'responsible' },
+    { profile_id: staff.id, role: 'collaborator' },
+  ]);
+
+  await signInAs(page, admin, '/admin/notifications?status=waiting');
+  const staffRow = page.getByTestId('notification-row').filter({ hasText: `Reminder: ${title}` }).filter({ hasText: staff.email });
+  await staffRow.getByRole('link', { name: /Details/ }).click();
+  await page.getByRole('button', { name: 'Cancel this message' }).click();
+  await page.getByRole('button', { name: 'Yes, cancel it' }).click();
+  await expect(page.getByText('Cancelled by an administrator', { exact: true }).filter({ visible: true })).toBeVisible();
+
+  // The 5-minute planner would once have revived it.
+  await runPlanner();
+  await page.reload();
+  await expect(page.getByText('Cancelled by an administrator', { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId('notification-events').filter({ visible: true })).toContainText('cancelled_by_admin');
+
+  // The activity page lists its reminders for the people who can edit it.
+  await page.goto(`/activities/${activityId}`);
+  const reminders = page.getByTestId('reminders').filter({ visible: true });
+  await expect(reminders.getByRole('listitem').filter({ hasText: staff.email })).toContainText('Cancelled');
+  await expect(reminders.getByRole('listitem').filter({ hasText: admin.email })).toContainText('Waiting');
+
+  await reminders.getByRole('listitem').filter({ hasText: staff.email }).getByRole('link', { name: 'Details' }).click();
+  await page.getByRole('button', { name: 'Undo cancel' }).click();
+  await expect(page.getByText('An administrator undid the cancellation', { exact: true }).filter({ visible: true })).toBeVisible();
+});
+
+test('a failed message is counted in the red badge, and can be sent again', async ({ page }) => {
+  const destination = uniqueEmail('failed');
+  await failedMessage(destination);
+
+  await signInAs(page, admin, '/admin/notifications?status=failed');
+  await expect(page.getByRole('banner').getByTestId('problem-badge')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Administration' }).getByTestId('problem-badge')).toBeVisible();
+
+  await page.getByTestId('notification-row').filter({ hasText: destination }).getByRole('link', { name: /Details/ }).click();
+  await page.getByRole('button', { name: 'Send again' }).click();
+  await expect(page.getByText('An administrator asked to send it again', { exact: true }).filter({ visible: true })
+    .or(page.getByTestId('notification-events').filter({ visible: true }).getByText('accepted'))).toBeVisible();
+  await expect(page.getByTestId('notification-events').filter({ visible: true })).toContainText('resend_by_admin');
+  await expect(page.getByRole('button', { name: 'Send again' })).toHaveCount(0);
+});
+
+test('reminder timings are settings', async ({ page }) => {
+  await signInAs(page, admin, '/admin/settings');
+  await page.getByLabel('Remind this many hours before a timed activity').fill('48');
+  await page.getByLabel('All-day activities: remind the day before at').fill('08:30');
+  await page.getByLabel('Added late: still remind if at least this many hours are left').fill('3');
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByLabel('Remind this many hours before a timed activity')).toHaveValue('48');
+  await expect(page.getByLabel('All-day activities: remind the day before at')).toHaveValue('08:30');
+  await expect(page.getByLabel('Added late: still remind if at least this many hours are left')).toHaveValue('3');
+});
+
+test('reminders show on the activity page only for the people who can edit it', async ({ page }) => {
+  const inTwoDays = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  const asCollaborator = await createActivityAs(admin, { title: `Collaborator view ${run}`, activity_date: inTwoDays, start_time: '11:00' }, [
+    { profile_id: admin.id, role: 'responsible' },
+    { profile_id: staff.id, role: 'collaborator' },
+  ]);
+  const asResponsible = await createActivityAs(admin, { title: `Responsible view ${run}`, activity_date: inTwoDays, start_time: '12:00' }, [
+    { profile_id: staff.id, role: 'responsible' },
+  ]);
+
+  await signInAs(page, staff, `/activities/${asCollaborator}`);
+  await expect(page.getByRole('heading', { name: `Collaborator view ${run}` })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Reminders' })).toHaveCount(0);
+
+  await page.goto(`/activities/${asResponsible}`);
+  const reminders = page.getByTestId('reminders').filter({ visible: true });
+  await expect(reminders.getByRole('listitem').filter({ hasText: staff.email })).toContainText('Waiting');
+  // Staff see the status, but the notification log is for administrators.
+  await expect(reminders.getByRole('link', { name: 'Details' })).toHaveCount(0);
 });

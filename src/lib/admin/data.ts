@@ -10,7 +10,8 @@ export async function getSettingsRow(): Promise<SettingsRow> {
     .from('system_settings')
     .select(
       'office_name, timezone, weekly_summary_enabled, weekly_summary_send_time, weekly_summary_send_if_empty, ' +
-        'weekly_summary_late_cutoff, notification_mode, test_redirect_email, email_from_name, email_reply_to',
+        'weekly_summary_late_cutoff, notification_mode, test_redirect_email, email_from_name, email_reply_to, ' +
+        'reminder_lead, date_only_reminder_time, reminder_min_notice',
     )
     .single<SettingsRow>();
   if (error) throw new Error(`Could not load settings: ${error.message}`);
@@ -77,6 +78,22 @@ export type JobRow = {
 };
 
 export const JOB_LIST_LIMIT = 100;
+
+// Messages that need an administrator's attention: failed, or reported as not delivered, in the
+// last 7 days. Shown as a red count next to Admin and Notifications.
+export const PROBLEM_WINDOW_DAYS = 7;
+
+export async function countNotificationProblems(): Promise<number> {
+  const supabase = await createClient();
+  const since = new Date(Date.now() - PROBLEM_WINDOW_DAYS * 24 * 3_600_000).toISOString();
+  const { count, error } = await supabase
+    .from('notification_jobs')
+    .select('id', { count: 'exact', head: true })
+    .gte('updated_at', since)
+    .or(`status.eq.failed,and(status.eq.sent,delivery_status.in.(${UNDELIVERED_STATUSES.join(',')}))`);
+  if (error) throw new Error(`Could not count notification problems: ${error.message}`);
+  return count ?? 0;
+}
 
 // Waiting messages: the next one due first. Everything else: the latest due first.
 export async function listNotificationJobs(filter: JobFilter, limit = JOB_LIST_LIMIT): Promise<JobRow[]> {

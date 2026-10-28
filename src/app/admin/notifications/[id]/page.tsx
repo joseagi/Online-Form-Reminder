@@ -5,10 +5,12 @@ import { Suspense, type ReactNode } from 'react';
 import { AdminTabs } from '@/app/admin/admin-tabs';
 import { requireAdmin } from '@/lib/auth';
 import { getNotificationJob, getSettingsRow } from '@/lib/admin/data';
+import { offeredAction } from '@/lib/admin/jobs';
 import { STATUS_REASON_LABELS } from '@/lib/admin/settings';
 import { isUuid } from '@/lib/activities/schema';
 import { formatTimestamp } from '@/lib/activities/format';
 import { STATUS_LABELS, STATUS_STYLES, deliveryLabel, deliveryStyle, describeJob } from '../labels';
+import { JobActions } from './job-actions';
 
 export const metadata: Metadata = { title: 'Notification · Office Activities' };
 
@@ -29,6 +31,7 @@ async function NotificationDetail({ params }: Pick<PageProps<'/admin/notificatio
   const [job, settings] = await Promise.all([getNotificationJob(id), getSettingsRow()]);
   if (!job) notFound();
   const at = (iso: string | null) => (iso ? formatTimestamp(iso, settings.timezone) : null);
+  const offered = offeredAction(job, new Date());
 
   return (
     <>
@@ -50,6 +53,13 @@ async function NotificationDetail({ params }: Pick<PageProps<'/admin/notificatio
           </>
         )}
       </p>
+
+      {offered && (
+        <div className="mb-6">
+          {/* Keyed by status, so a finished action does not leave its confirmation open. */}
+          <JobActions key={`${job.status}:${job.status_reason}`} jobId={job.id} action={offered.action} warning={offered.warning} />
+        </div>
+      )}
 
       <dl className="mb-8 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[12rem_1fr]">
         <Row label="Status">

@@ -27,6 +27,9 @@ export const settingsSchema = z.object({
     .max(80, 'Use at most 80 characters.')
     .refine((v) => !/[\u0000-\u001F\u007F<>"]/.test(v), 'The sender name cannot contain line breaks, <, > or quotes.'),
   emailReplyTo: optionalEmail,
+  reminderLeadHours: z.number().int('Use whole hours.').min(1, 'Use 1 to 168 hours.').max(168, 'Use 1 to 168 hours.'),
+  dateOnlyReminderTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Choose a time.'),
+  reminderMinNoticeHours: z.number().int('Use whole hours.').min(0, 'Use 0 to 24 hours.').max(24, 'Use 0 to 24 hours.'),
 });
 
 export type SettingsForm = z.input<typeof settingsSchema>;
@@ -42,6 +45,9 @@ export type SettingsRow = {
   test_redirect_email: string | null;
   email_from_name: string;
   email_reply_to: string | null;
+  reminder_lead: string;
+  date_only_reminder_time: string;
+  reminder_min_notice: string;
 };
 
 // Postgres intervals arrive as text, e.g. "16:00:00" or "1 day". Whole hours only.
@@ -62,6 +68,9 @@ export function toSettingsForm(row: SettingsRow): SettingsForm {
     testRedirectEmail: row.test_redirect_email ?? '',
     emailFromName: row.email_from_name,
     emailReplyTo: row.email_reply_to ?? '',
+    reminderLeadHours: intervalHours(row.reminder_lead),
+    dateOnlyReminderTime: row.date_only_reminder_time.slice(0, 5),
+    reminderMinNoticeHours: intervalHours(row.reminder_min_notice),
   };
 }
 
@@ -76,6 +85,9 @@ export function toSettingsUpdate(values: z.output<typeof settingsSchema>) {
     test_redirect_email: values.testRedirectEmail || null,
     email_from_name: values.emailFromName,
     email_reply_to: values.emailReplyTo || null,
+    reminder_lead: `${values.reminderLeadHours} hours`,
+    date_only_reminder_time: values.dateOnlyReminderTime,
+    reminder_min_notice: `${values.reminderMinNoticeHours} hours`,
   };
 }
 
@@ -122,4 +134,8 @@ export const STATUS_REASON_LABELS: Record<string, string> = {
   reminders_off: 'Reminders were turned off for the activity',
   recipient_removed: 'The person was removed from the activity, or turned off email reminders',
   recipient_inactive: 'The person is no longer active, or has no email address',
+  // Administrators
+  cancelled_by_admin: 'Cancelled by an administrator',
+  restored_by_admin: 'An administrator undid the cancellation',
+  resend_by_admin: 'An administrator asked to send it again',
 };

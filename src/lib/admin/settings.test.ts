@@ -11,6 +11,9 @@ const valid: SettingsForm = {
   testRedirectEmail: '',
   emailFromName: 'Office Reminders',
   emailReplyTo: '',
+  reminderLeadHours: 24,
+  dateOnlyReminderTime: '09:00',
+  reminderMinNoticeHours: 2,
 };
 
 describe('settingsSchema', () => {
@@ -24,6 +27,10 @@ describe('settingsSchema', () => {
     ['an invalid test address', { testRedirectEmail: 'qa@' }, 'Enter a valid email address.'],
     ['a sender name with a line break', { emailFromName: 'Office\nBcc: x@evil.example' }, 'The sender name cannot contain line breaks, <, > or quotes.'],
     ['an unknown mode', { notificationMode: 'loud' }, undefined],
+    ['no reminder lead', { reminderLeadHours: 0 }, 'Use 1 to 168 hours.'],
+    ['a reminder lead over a week', { reminderLeadHours: 169 }, 'Use 1 to 168 hours.'],
+    ['part hours of notice', { reminderMinNoticeHours: 1.5 }, 'Use whole hours.'],
+    ['a missing all-day reminder time', { dateOnlyReminderTime: '9' }, 'Choose a time.'],
   ])('rejects %s', (_label, overrides, message) => {
     const result = settingsSchema.safeParse({ ...valid, ...overrides });
     expect(result.success).toBe(false);
@@ -53,14 +60,27 @@ describe('converting to and from the database', () => {
       test_redirect_email: null,
       email_from_name: 'Office Reminders',
       email_reply_to: 'office@example.com',
+      reminder_lead: '2 days',
+      date_only_reminder_time: '08:30:00',
+      reminder_min_notice: '03:00:00',
     };
     const form = toSettingsForm(row);
-    expect(form).toMatchObject({ summarySendTime: '18:30', summaryLateCutoffHours: 12, testRedirectEmail: '' });
+    expect(form).toMatchObject({
+      summarySendTime: '18:30',
+      summaryLateCutoffHours: 12,
+      testRedirectEmail: '',
+      reminderLeadHours: 48,
+      dateOnlyReminderTime: '08:30',
+      reminderMinNoticeHours: 3,
+    });
     expect(toSettingsUpdate(settingsSchema.parse(form))).toMatchObject({
       weekly_summary_send_time: '18:30',
       weekly_summary_late_cutoff: '12 hours',
       test_redirect_email: null,
       email_reply_to: 'office@example.com',
+      reminder_lead: '48 hours',
+      date_only_reminder_time: '08:30',
+      reminder_min_notice: '3 hours',
     });
   });
 });

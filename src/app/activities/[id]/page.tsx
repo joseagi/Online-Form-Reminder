@@ -4,7 +4,9 @@ import { notFound } from 'next/navigation';
 import { Suspense, type ReactNode } from 'react';
 import { Alert } from '@/components/ui';
 import { requireUser } from '@/lib/auth';
-import { canEditActivity, getActivity, getActivityHistory } from '@/lib/activities/data';
+import { STATUS_LABELS as JOB_STATUS_LABELS, STATUS_STYLES, deliveryLabel, deliveryStyle } from '@/app/admin/notifications/labels';
+import { canEditActivity, getActivity, getActivityHistory, getActivityReminders, type ActivityReminder } from '@/lib/activities/data';
+import { STATUS_REASON_LABELS } from '@/lib/admin/settings';
 import { formatTimestamp, formatWhen } from '@/lib/activities/format';
 import { describeChange, type HistoryEntry } from '@/lib/activities/history';
 import { ROLE_LABELS, isUuid } from '@/lib/activities/schema';
@@ -33,12 +35,13 @@ export default function ActivityPage({ params, searchParams }: PageProps<'/activ
 }
 
 async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activities/[id]'>, 'params' | 'searchParams'>) {
-  await requireUser();
+  const user = await requireUser();
   const { id } = await params;
   if (!isUuid(id)) notFound();
 
   const [activity, canEdit, history] = await Promise.all([getActivity(id), canEditActivity(id), getActivityHistory(id)]);
   if (!activity) notFound();
+  const reminders = canEdit ? await getActivityReminders(id) : [];
   const notice = NOTICES[firstParam((await searchParams).notice) ?? ''];
 
   return (
@@ -58,7 +61,7 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium dark:border-zinc-700">
+          <span data-testid="activity-status" className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium dark:border-zinc-700">
             {STATUS_LABELS[activity.status]}
           </span>
           {canEdit && (
@@ -126,8 +129,52 @@ async function ActivityDetail({ params, searchParams }: Pick<PageProps<'/activit
         </ul>
       </section>
 
+      {canEdit && (
+        <Reminders reminders={reminders} enabled={activity.reminders_enabled} timeZone={activity.timezone} isAdmin={user.role === 'admin'} />
+      )}
+
       <History entries={history} timeZone={activity.timezone} />
     </article>
+  );
+}
+
+// For the people who can edit the activity: who will be (or was) reminded, when, and how it went.
+function Reminders({ reminders, enabled, timeZone, isAdmin }: { reminders: ActivityReminder[]; enabled: boolean; timeZone: string; isAdmin: boolean }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-lg font-medium">Reminders</h2>
+      {reminders.length === 0 ? (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          {enabled
+            ? 'None planned. People get a reminder when “email reminder” is on for them and they have an email address.'
+            : 'Day-before reminders are off for this activity.'}
+        </p>
+      ) : (
+        <ul data-testid="reminders" className="divide-y divide-zinc-200 rounded-md border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800">
+          {reminders.map((reminder) => (
+            <li key={reminder.id} className="flex flex-wrap items-start justify-between gap-2 px-3 py-2">
+              <span>
+                <span className="font-medium">{reminder.profile?.full_name ?? reminder.contact?.full_name ?? reminder.destination}</span>{' '}
+                <span className="text-xs text-zinc-500">{reminder.destination}</span>
+                <span className="block text-xs text-zinc-500">Due {formatTimestamp(reminder.scheduled_for, timeZone)}</span>
+              </span>
+              <span className="text-right">
+                <span className={`rounded-full border px-2 text-xs ${STATUS_STYLES[reminder.status]}`}>{JOB_STATUS_LABELS[reminder.status]}</span>
+                {deliveryLabel(reminder) && <span className={`ml-2 text-xs ${deliveryStyle(reminder)}`}>{deliveryLabel(reminder)}</span>}
+                {reminder.status_reason && (
+                  <span className="block text-xs text-zinc-500">{STATUS_REASON_LABELS[reminder.status_reason] ?? reminder.status_reason}</span>
+                )}
+                {isAdmin && (
+                  <Link href={`/admin/notifications/${reminder.id}`} className="block text-xs underline">
+                    Details
+                  </Link>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

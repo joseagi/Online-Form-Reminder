@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { signOut } from '@/app/actions';
+import { ProblemBadge } from '@/components/problem-badge';
 import { getCurrentUser } from '@/lib/auth';
 
 export function SiteHeader() {
@@ -31,6 +32,9 @@ async function UserMenu() {
       {user.role === 'admin' && (
         <Link href="/admin/notifications" className="hover:underline">
           Admin
+          <Suspense fallback={null}>
+            <ProblemBadge />
+          </Suspense>
         </Link>
       )}
       <span className="text-zinc-600 dark:text-zinc-400" data-testid="signed-in-as">

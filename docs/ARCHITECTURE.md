@@ -491,7 +491,23 @@ If a dispatcher dies mid-send, its lease expires. The job is re-claimed and rese
 - **Retryable:** network or timeout, HTTP 429 (respect `Retry-After`), 5xx, and `409 concurrent_idempotent_requests`. Backoff is 1 → 5 → 15 → 60 → 180 min, capped at `expires_at`.
 - **Non-retryable:** 4xx validation such as an invalid address. Also 401/403 (bad API key: alert admins). Also `409 invalid_idempotent_request` (a payload mismatch, which shouldn't happen with frozen payloads, so it's flagged).
 - **Every attempt writes a `notification_logs` row** with status code and error. Permanent failures go into a rate-limited alert email to admins and a red badge on the dashboard.
-- **Implemented in stage 5b** (`_shared/resend.ts`, checked against resend.com/docs on 2026-10-28). The alert email and badge are not built yet.
+- **Implemented in stage 5b** (`_shared/resend.ts`, checked against resend.com/docs on 2026-10-28). The red badge came in 5d (below). The alert email is moved to **Phase 6** (decided 2026-10-28).
+- **Implemented in stage 5d** (migration `20261029090000_admin_cancel_retry.sql`):
+  - **`cancel_notification_job(id)`** (admins only) cancels a `pending` message, with reason `cancelled_by_admin`. A message being sent right now can't be cancelled.
+  - **`retry_notification_job(id)`** (admins only, database clock only, no caller-supplied time):
+    - It puts a `failed` message, or an admin-cancelled one, back to `pending` before its `expires_at`.
+    - A failed message goes now: `request_dispatch()` is called. An undone cancel keeps its planned time.
+    - `max_attempts` rises to `attempt_count + 3` (20 at most), and earlier attempts still count.
+    - The key and the frozen payload are kept, so Resend's 24-hour idempotency still covers an earlier attempt. For `outcome_unknown`, the page tells the admin to check Resend's email log first.
+  - **Both planners** (`sync_reminders`, `plan_weekly_summaries`) used to revive any `cancelled` job they would plan again. They now skip `cancelled_by_admin`.
+    - A cancel applies to that one message. A reminder for a new start time is a new message and is planned as usual; moving back to the cancelled time leaves it cancelled.
+    - Decided 2026-10-28: "new time, new reminder".
+  - **History:** each action writes a `notification_logs` row (`cancelled_by_admin`, `resend_by_admin` or `restored_by_admin`) with `details.by` = the admin.
+  - **Badge:** failed messages, plus `sent` messages with a bounced, complained, failed or suppressed delivery status, whose `updated_at` falls within the last 7 days. It's shown next to Admin (header) and Notifications (tab).
+  - **Verified:**
+    - 24 pgTAP tests (test 13).
+    - **Mutation check:** loading the old planners makes test 13 fail (19 of 24).
+    - Browser tests for cancel, the planner rerun, undo, send again, the badge, the reminder settings, and reminders on the activity page (editors only).
   - **The request:** `POST https://api.resend.com/emails` with `Authorization: Bearer`, a `User-Agent` (Resend refuses requests without one), and `Idempotency-Key = dedupe_key` (at most 200 characters by constraint; Resend allows 256). The body has one `to` address, `subject`, `html`, `text` and, when set, `reply_to`. The sender is `<email_from_name> <EMAIL_FROM_ADDRESS>`, quoted when the name contains RFC 5322 specials. The provider stops waiting after 10 s.
   - **Error codes:** Resend's error body is `{ statusCode, name, message }`. `name` becomes `last_error_code`; a body that isn't JSON gives `http_<status>`.
     - **Retryable:** any 5xx, network errors, timeouts, a 2xx without an id, `rate_limit_exceeded`, `daily_quota_exceeded` (resets at midnight UTC), `concurrent_idempotent_requests` and `resource_locked`. `Retry-After` (seconds or an HTTP date) is passed to `complete_notification_job`, which waits for whichever is longer, that or the backoff.
@@ -705,7 +721,7 @@ Item 9 (sending domain) has no default and is still open. It's needed before Pha
 | **3. Activities** | Form (Zod), `save_activity` RPC, register with search and filters, calendar, detail and history, edit with version check, complete, cancel, reschedule | Unit, DB and E2E tests for create, edit, cancel and permission denial |
 | **4. Weekly summary** | Planner (summary part), `weekly_summary_items`, templates, dispatcher with the `log` provider, admin preview, mode gate | Boundary tests pass; "once per week" holds under repeated simulated runs |
 | **5. Reminders and reliability** | Reminder sync triggers, reconcile pass, claim/lease, Resend provider with idempotency, retries and backoff, webhook function, log viewer, retry/cancel, "send test to me" | Crash-after-accept test shows no duplicate; webhook signature tests; retry tests |
-| **6. Hardening** | Timezone, cancellation, reschedule, permission and outage/restore test suites | Every §8 row has recorded evidence |
+| **6. Hardening** | Timezone, cancellation, reschedule, permission and outage/restore test suites; rate-limited failure alert email to admins (moved from Phase 5, §7.5) | Every §8 row has recorded evidence |
 | **7. Production** | Supabase Pro, domain DNS, custom auth SMTP, hosting, secrets, cron, backups and restore drill, monitoring, handover runbook (operations, costs, maintenance) | Two Sundays observed in production test mode, then switched to live |
 | **8. WhatsApp** | Re-verify Meta/Twilio docs and pricing; consent capture; templates; provider; callbacks; cost controls | Email suite still green; WhatsApp acceptance tests pass |
 

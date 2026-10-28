@@ -89,6 +89,37 @@ export async function updateSettings(values: Record<string, unknown>) {
   if (error) throw new Error(`updating settings failed: ${error.message}`);
 }
 
+// A message that failed after all its attempts, with its deadline an hour away.
+export async function failedMessage(destination: string): Promise<string> {
+  const { data, error } = await admin
+    .from('notification_jobs')
+    .insert({
+      kind: 'test',
+      channel: 'email',
+      dedupe_key: `test:email:e2e-failed-${destination}`,
+      destination,
+      period_start: new Date().toISOString().slice(0, 10),
+      scheduled_for: new Date(Date.now() - 3_600_000).toISOString(),
+      run_after: new Date(Date.now() - 3_600_000).toISOString(),
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      status: 'failed',
+      status_reason: 'retries_exhausted',
+      attempt_count: 6,
+      first_attempt_at: new Date(Date.now() - 3_600_000).toISOString(),
+      last_error_message: 'Resend did not answer in time.',
+    })
+    .select('id')
+    .single();
+  if (error) throw new Error(`creating the failed message failed: ${error.message}`);
+  return data.id;
+}
+
+// What the 5-minute schedule does first: plan summaries and reminders.
+export async function runPlanner() {
+  const { error } = await admin.rpc('plan_notifications');
+  if (error) throw new Error(`planning failed: ${error.message}`);
+}
+
 // A message Resend accepted and then reported as bounced, recorded the way the resend-webhook
 // function records it. (The address is never contacted: nothing is sent.)
 export async function bouncedMessage(destination: string, reason: string): Promise<string> {

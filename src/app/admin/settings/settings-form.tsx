@@ -56,6 +56,26 @@ export function SettingsFormView({ initial, timezone }: { initial: SettingsForm;
           onChange={(e) => set('summarySendIfEmpty', e.target.checked)} />
       </Section>
 
+      <Section title="Day-before reminders">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Remind this many hours before a timed activity" type="number" min={1} max={168}
+            value={values.reminderLeadHours}
+            onChange={(e) => set('reminderLeadHours', e.target.value === '' ? Number.NaN : Number(e.target.value))}
+            error={errors.reminderLeadHours} hint="1 to 168 hours (a week). Usually 24." />
+          <Field label="All-day activities: remind the day before at" type="time" value={values.dateOnlyReminderTime}
+            onChange={(e) => set('dateOnlyReminderTime', e.target.value)} error={errors.dateOnlyReminderTime}
+            hint={`In ${timezone}.`} />
+          <Field label="Added late: still remind if at least this many hours are left" type="number" min={0} max={24}
+            value={values.reminderMinNoticeHours}
+            onChange={(e) => set('reminderMinNoticeHours', e.target.value === '' ? Number.NaN : Number(e.target.value))}
+            error={errors.reminderMinNoticeHours}
+            hint="For activities added after their reminder time. With less time left, no reminder is sent." />
+        </div>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Changes apply to reminders that have not gone out yet, within 5 minutes.
+        </p>
+      </Section>
+
       <Section title="Sending">
         <SelectField label="Notification mode" value={values.notificationMode}
           onChange={(e) => set('notificationMode', e.target.value as SettingsForm['notificationMode'])}

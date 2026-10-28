@@ -31,12 +31,13 @@ test('editors cancel, reopen and complete an activity, and each change is in the
   await page.getByLabel('Reason for cancelling').fill('Host unavailable');
   await page.getByRole('button', { name: 'Confirm cancellation' }).click();
   await expect(page.getByText('Activity cancelled.')).toBeVisible();
-  await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();
+  // The activity's own status (its reminders, listed below, show theirs too).
+  await expect(page.getByTestId('activity-status')).toHaveText('Cancelled');
   await expect(page.getByText('Reason for cancelling: Host unavailable')).toBeVisible();
 
   await page.getByRole('button', { name: 'Reopen activity' }).click();
   await expect(page.getByText('Activity reopened.')).toBeVisible();
-  await expect(page.getByText('Scheduled', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('activity-status')).toHaveText('Scheduled');
 
   await page.getByRole('button', { name: 'Mark as completed' }).click();
   await page.getByLabel('Outcome note (optional)').fill('Agreed next steps');

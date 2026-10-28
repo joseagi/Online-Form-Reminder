@@ -224,6 +224,9 @@ isOneToOne: false
 "can_view_activity":
 { Args: { "p_activity_id": string }; Returns: boolean
                            },
+"cancel_notification_job":
+{ Args: { "p_job_id": string }; Returns: Database["public"]['Enums']["job_status"]
+                           },
 "claim_notification_jobs":
 { Args: { "p_lease"?: string,"p_limit"?: number,"p_now"?: string,"p_run_id": string }; Returns: {
               "accepted_at": string | null,
@@ -271,6 +274,9 @@ isOneToOne: false
 "configure_dispatch":
 { Args: { "p_secret": string,"p_url": string }; Returns: undefined
                            },
+"delivery_status_rank":
+{ Args: { "p_status": Database["public"]['Enums']["delivery_status"] }; Returns: number
+                           },
 "freeze_notification_payload":
 { Args: { "p_html": string,"p_job_id": string,"p_subject": string,"p_text": string }; Returns: {
               "body_text": string,"html": string,"subject": string
@@ -305,6 +311,9 @@ isOneToOne: false
 "queue_test_notification":
 { Args: Record<PropertyKey, never>; Returns: string
                            },
+"record_delivery_event":
+{ Args: { "p_details"?: Json,"p_error_code"?: string,"p_error_message"?: string,"p_event_id": string,"p_event_type": string,"p_occurred_at"?: string,"p_provider": string,"p_provider_message_id": string }; Returns: string
+                           },
 "reminder_details":
 { Args: { "p_job_id": string,"p_now"?: string }; Returns: {
               "activity_date": string,"activity_id": string,"contact_email": string,"contact_name": string,"contact_phone": string,"description": string,"end_time": string,"location": string,"meeting_url": string,"others": (string)[],"preparation_notes": string,"problem": string,"recipient_is_staff": boolean,"recipient_name": string,"recipient_role": Database["public"]['Enums']["recipient_role"],"responsible_name": string,"start_time": string,"timezone": string,"title": string
@@ -315,6 +324,9 @@ isOneToOne: false
                            },
 "request_dispatch":
 { Args: Record<PropertyKey, never>; Returns: number
+                           },
+"retry_notification_job":
+{ Args: { "p_job_id": string }; Returns: Database["public"]['Enums']["job_status"]
                            },
 "save_activity":
 { Args: { "p_activity": Json,"p_expected_version"?: number,"p_recipients": Json }; Returns: string
