@@ -31,6 +31,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+# e.g. cloudflared output while testing webhooks locally
+*.log
 
 # env files: real values are never committed; only the template is
 .env*

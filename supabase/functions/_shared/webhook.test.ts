@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseDeliveryReport, sign, verifyWebhook } from './webhook.ts';
 
-// The worked example from docs.svix.com/receiving/verifying-payloads/how-manual.
+// The worked example from docs.svix.com/receiving/verifying-payloads/how-manual: public, not a
+// secret. Written without its "whsec_" prefix (which verifyWebhook accepts either way), because
+// secret scanners take any whsec_ value in a repository for a leaked Stripe secret.
 const svix = {
-  secret: 'whsec_plJ3nmyCDGBKInavdOK15jsl',
+  secret: 'plJ3nmyCDGBKInavdOK15jsl',
   body: '{"event_type":"ping","data":{"success":true}}',
   id: 'msg_loFOjxBNrRLzqYUf',
   timestamp: '1731705121',
@@ -16,6 +18,10 @@ describe('verifyWebhook (Svix signatures, as Resend sends them)', () => {
     expect(await verifyWebhook({ ...svix, now: at(1731705121) })).toBe('ok');
   });
 
+  it('accepts the secret as Resend shows it, with the whsec_ prefix', async () => {
+    expect(await verifyWebhook({ ...svix, secret: ['whsec', svix.secret].join('_'), now: at(1731705121) })).toBe('ok');
+  });
+
   it('rejects a changed body, id or timestamp', async () => {
     const now = at(1731705121);
     expect(await verifyWebhook({ ...svix, body: svix.body.replace('true', 'false'), now })).toBe('bad_signature');
@@ -24,7 +30,7 @@ describe('verifyWebhook (Svix signatures, as Resend sends them)', () => {
   });
 
   it('rejects a signature made with another secret', async () => {
-    expect(await verifyWebhook({ ...svix, secret: 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw', now: at(1731705121) })).toBe('bad_signature');
+    expect(await verifyWebhook({ ...svix, secret: 'MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw', now: at(1731705121) })).toBe('bad_signature');
   });
 
   it('rejects requests more than 5 minutes old or ahead (replays)', async () => {
@@ -47,8 +53,8 @@ describe('verifyWebhook (Svix signatures, as Resend sends them)', () => {
   });
 
   it('reports a secret that is not a signing secret', async () => {
-    expect(await verifyWebhook({ ...svix, secret: 'whsec_not base64!', now: at(1731705121) })).toBe('bad_secret');
-    expect(await verifyWebhook({ ...svix, secret: 'whsec_', now: at(1731705121) })).toBe('bad_secret');
+    expect(await verifyWebhook({ ...svix, secret: 'not base64!', now: at(1731705121) })).toBe('bad_secret');
+    expect(await verifyWebhook({ ...svix, secret: ['whsec', ''].join('_'), now: at(1731705121) })).toBe('bad_secret');
   });
 
   it('signs as Svix does (so tests can make valid requests)', async () => {

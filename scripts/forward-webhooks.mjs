@@ -17,6 +17,8 @@ const PASSED_HEADERS = ['content-type', 'svix-id', 'svix-timestamp', 'svix-signa
 const server = createServer(async (req, res) => {
   const path = new URL(req.url ?? '/', 'http://localhost').pathname;
   if (req.method !== 'POST' || path !== '/resend-webhook') {
+    // Shown, because a webhook URL without the /resend-webhook path ends up here.
+    console.log(`${new Date().toISOString()}  refused ${req.method} ${path} (only POST /resend-webhook is passed on)`);
     res.writeHead(404).end();
     return;
   }

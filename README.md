@@ -106,7 +106,8 @@ The local stack leaves out Supabase Studio. The keys `db:start` prints are the s
 - **One-time setup:** run `npm run dispatch:setup`, then restart the stack (`npm run db:stop`, then `npm run db:start`). The restart lets the function read its new secret.
 - **To see what happened:** open **Admin → Notifications** (below). Underneath, it reads `public.notification_jobs` (each message, its rendered content and status) and `public.notification_logs` (every attempt, plus `run.started` / `run.finished` heartbeats).
 - **After adding a new Edge Function** (a new folder in `supabase/functions/`), restart the stack. The local Edge Runtime only finds functions when it starts; until then, calls return 404 "Function not found". Your data is kept.
-- **After changing a function's code or secrets**, restart too. Edits aren't reliably picked up while it runs. Restarting just the Edge Runtime is quicker: `docker restart supabase_edge_runtime_office-reminders`.
+- **After changing a function's code**, restart the Edge Runtime (`docker restart supabase_edge_runtime_office-reminders`). Edits aren't reliably picked up while it runs.
+- **After changing `supabase/functions/.env`**, restart the whole stack (`npm run db:stop`, then `npm run db:start`). The secrets are handed to the Edge Runtime only when the stack starts, so `docker restart` keeps the old ones.
 
 ### Sending real email locally (Resend)
 
