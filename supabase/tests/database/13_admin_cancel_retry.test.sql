@@ -43,6 +43,9 @@ $$;
 create function pg_temp.as_user(p_id text) returns void language sql as $$
   select set_config('request.jwt.claims', format('{"sub": "%s", "role": "authenticated"}', p_id), true);
 $$;
+-- New functions are closed to the API roles by default (see 14_privileges); this helper is
+-- called while acting as a signed-in user.
+grant execute on function pg_temp.as_user(text) to authenticated;
 select set_config('tests.reminder', (pg_temp.reminder('2035-03-06 09:00+00')).id::text, true);
 
 -- Cancelling a reminder -------------------------------------------------------------------------

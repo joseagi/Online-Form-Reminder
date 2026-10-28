@@ -418,6 +418,18 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 - **Implemented in stage 2c:** `supabase/migrations/20261015090000_access_policies.sql`, verified by `supabase/tests/database/05_access_policies.test.sql`. Signed-in users hold no `DELETE` on activities and no `TRUNCATE` anywhere, because `TRUNCATE` would bypass RLS.
 - The browser only ever holds the publishable key. The secret key exists only in server-side code: the admin invite action and the Edge Functions.
 - Every server action re-checks authorisation and does not rely on the UI hiding buttons.
+- **Hardened in stage 6a:**
+  - **Allowlist test** (`14_privileges.test.sql`):
+    - Anonymous visitors can call no function and touch no table.
+    - Signed-in users can call exactly 14 functions and hold exactly the listed table rights, with RLS deciding the rows.
+    - Every table has RLS; every security definer function pins its `search_path`; no view bypasses RLS; no sequence is usable by the API roles.
+  - **A gap the test found:** Supabase's default privileges had left signed-in and anonymous users with `USAGE, SELECT, UPDATE` on the `audit_logs` and `notification_logs` ID sequences. `UPDATE` allows `setval`; moving the audit sequence back would break every activity save. It wasn't reachable through the API, but migration `20261029100000_deny_by_default_grants.sql` revokes it.
+  - **New objects start closed:** the same migration changes the default privileges for objects that migrations (run as `postgres`) create:
+    - nothing for the API roles on new tables and sequences in `public`;
+    - no `EXECUTE` for `PUBLIC` on new functions. That one is global, because PostgreSQL's built-in `PUBLIC` grant can't be revoked per schema.
+    - The test proves it by creating a probe table, function and sequence in its own transaction.
+  - **Server Actions:** `src/app/server-actions.test.ts` reads every `'use server'` file. Each exported action must call `requireUser()` or `requireAdmin()` (directly, or through a local helper), unless it is one of the four listed for signed-out visitors.
+  - **Mutation checks:** opening a function and a table to anonymous visitors fails test 14; removing `requireAdmin()` from `saveSettings` fails the action test.
 
 ---
 

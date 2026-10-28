@@ -30,6 +30,11 @@ Internal web app for an office of up to about 20 staff:
 | 5b. Resend email provider: idempotency keys, error handling, no-duplicate crash test | Done. 157 unit, 20 integration tests passing |
 | 5c. Resend delivery webhooks (signed): delivered, bounced, complained | Done. 286 pgTAP, 169 unit, 25 integration, 24 browser tests passing |
 | 5d. Admin: retry and cancel, reminder settings, reminders on the activity page, problem badge | Done. 310 pgTAP, 179 unit, 25 integration, 28 browser tests passing. **Phase 5 complete** (the failure alert email moved to Phase 6) |
+| 6a. Permission hardening: privilege allowlist for every function, table and sequence; new objects start closed; every Server Action checks the caller | Done. 320 pgTAP, 191 unit, 25 integration, 28 browser tests passing |
+| 6b. Time zones across daylight-saving changes | Planned |
+| 6c. Outage and recovery: scheduler backlog, provider outage, each message sent once | Planned |
+| 6d. Failure alert email to administrators (rate-limited) | Planned |
+| 6e. Acceptance evidence for every §8 criterion (`docs/ACCEPTANCE.md`) | Planned |
 
 ## Prerequisites (Windows)
 
@@ -160,6 +165,11 @@ Administrators see an **Admin** link in the header. Staff who open these address
 ### Database changes
 
 Every schema change is a new SQL file in `supabase/migrations/`; applied migrations are never edited. After adding one, run `npm run db:migrate` (keeps your local data) and `npm run db:test`. CI always rebuilds from scratch, so every migration is also tested that way on each push.
+
+- **New objects start closed.** Since stage 6a, a new table, function or sequence gives signed-in users and anonymous visitors no rights. If signed-in users need one, grant it in the same migration. A function they call must check the caller itself (`is_admin()`, `can_edit_activity()`, …).
+- **Then add it to the allowlist.** [`14_privileges.test.sql`](supabase/tests/database/14_privileges.test.sql) lists exactly what the API roles may use, and fails until a new grant is added there on purpose.
+- **Lint for enums.** `npm run db:lint` warns when PL/pgSQL assigns text to an enum without a cast (`'sent'::public.job_status`). CI treats warnings as failures.
+- **Server Actions** must call `requireUser()` or `requireAdmin()` first. [`src/app/server-actions.test.ts`](src/app/server-actions.test.ts) checks every one; the four meant for signed-out visitors (sign in, sign out, reset request, email link) are listed there.
 
 ### Troubleshooting: Docker image downloads fail
 
