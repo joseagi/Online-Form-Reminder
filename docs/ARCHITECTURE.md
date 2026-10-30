@@ -553,6 +553,19 @@ If a dispatcher dies mid-send, its lease expires. The job is re-claimed and rese
 | Bounce or invalid address | `failed` or `delivery_status = bounced`, visible in the log viewer |
 | Activity edited while a retry is pending | Re-validated on every attempt. A reschedule supersedes the job |
 
+- **Verified in stage 6c** (`tests/integration/recovery.test.ts`): the real dispatcher run with Deno and the real local database, a fake Resend that can be taken down or slowed, and "time passing" simulated by moving a message's next attempt back.
+  - **Missed runs, then catch-up:**
+    - Each run takes one batch (`dispatch_batch_size` is set to 3 for the test), so a backlog takes several runs. Every due message is sent once.
+    - A summary 2 hours late but within its cutoff goes out as "(Delayed)".
+    - A summary past its cutoff, and a reminder whose activity started during the outage, are `skipped (expired)` and never reach Resend.
+  - **Resend outage (503), then recovery:** every message waits about a minute (`retrying`, `service_unavailable`), then goes out exactly once on its second attempt: 2 requests per key, 1 email.
+  - **An outage that outlasts the deadline:** the second failure would wait past `expires_at`, so the message becomes `failed (retries_exhausted)`. It is never sent late, and the red badge counts it.
+  - **Two runs claiming at the same moment:** two separate database sessions run `claim_notification_jobs` while the first one's transaction is still open. The second gets nothing at once instead of waiting, and every message is attempted once.
+    - **Mutation check:** without `for update skip locked`, the second session waits, then claims the same 4 messages, and the test fails.
+  - **Three overlapping dispatcher runs** (slowed answers, so their windows provably overlap): each message is claimed once and requested once.
+    - This end-to-end test alone did *not* catch the removed locks: each claim takes only milliseconds. The two-session test above is the one that guards the locking.
+  - **Web host down:** none of these tests starts the web app. The pipeline is the database, Cron and the Edge Functions.
+
 ### 7.7 Accepted vs delivered
 - `status = 'sent'` with `accepted_at` and `provider_message_id` means **the provider accepted the request**.
 - `delivery_status` is updated from Resend webhooks (`email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed`, `email.suppressed`).

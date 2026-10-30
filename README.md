@@ -32,7 +32,7 @@ Internal web app for an office of up to about 20 staff:
 | 5d. Admin: retry and cancel, reminder settings, reminders on the activity page, problem badge | Done. 310 pgTAP, 179 unit, 25 integration, 28 browser tests passing. **Phase 5 complete** (the failure alert email moved to Phase 6) |
 | 6a. Permission hardening: privilege allowlist for every function, table and sequence; new objects start closed; every Server Action checks the caller | Done. 320 pgTAP, 191 unit, 25 integration, 28 browser tests passing |
 | 6b. Time zones across daylight-saving changes; emails give the office-time equivalent for activities in other zones | Done. 339 pgTAP, 210 unit, 25 integration, 28 browser tests passing |
-| 6c. Outage and recovery: scheduler backlog, provider outage, each message sent once | Planned |
+| 6c. Outage and recovery: scheduler backlog, provider outage, each message sent once | Done. 339 pgTAP, 210 unit, 30 integration, 28 browser tests passing |
 | 6d. Failure alert email to administrators (rate-limited) | Planned |
 | 6e. Acceptance evidence for every §8 criterion (`docs/ACCEPTANCE.md`) | Planned |
 
