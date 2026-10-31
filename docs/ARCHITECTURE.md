@@ -640,6 +640,8 @@ type SendResult =
 
 ## 8. Acceptance criteria: mechanism and test
 
+The recorded evidence for each row, and what remains for staging, is in [ACCEPTANCE.md](ACCEPTANCE.md) (Phase 6, 2026-10-31).
+
 | Criterion | Mechanism | Test / evidence (phase) |
 |---|---|---|
 | Activities stored correctly | Zod (client and server), DB constraints, atomic `save_activity` | Vitest, pgTAP, Playwright (P3) |

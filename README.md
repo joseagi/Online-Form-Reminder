@@ -34,7 +34,7 @@ Internal web app for an office of up to about 20 staff:
 | 6b. Time zones across daylight-saving changes; emails give the office-time equivalent for activities in other zones | Done. 339 pgTAP, 210 unit, 25 integration, 28 browser tests passing |
 | 6c. Outage and recovery: scheduler backlog, provider outage, each message sent once | Done. 339 pgTAP, 210 unit, 30 integration, 28 browser tests passing |
 | 6d. Failure alert email to administrators (at most one every 6 hours) | Done. 361 pgTAP, 218 unit, 32 integration, 28 browser tests passing |
-| 6e. Acceptance evidence for every §8 criterion (`docs/ACCEPTANCE.md`) | Planned |
+| 6e. Acceptance evidence for every §8 criterion (`docs/ACCEPTANCE.md`), plus a simulated two-week schedule test | Done. 371 pgTAP, 218 unit, 32 integration, 28 browser tests passing. **Phase 6 complete**: 9 of 12 criteria met; 3 need hosted staging (Phase 7) |
 
 ## Prerequisites (Windows)
 
