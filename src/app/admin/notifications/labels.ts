@@ -22,6 +22,7 @@ export const STATUS_STYLES: Record<JobRow['status'], string> = {
 export function describeJob(job: Pick<JobRow, 'kind' | 'period_start' | 'activity'>): string {
   if (job.kind === 'weekly_summary') return `Weekly summary${job.period_start ? `, week of ${formatDate(job.period_start)}` : ''}`;
   if (job.kind === 'test') return 'Test message';
+  if (job.kind === 'failure_alert') return 'Failure alert to administrators';
   return job.activity ? `Reminder: ${job.activity.title}` : 'Day-before reminder';
 }
 

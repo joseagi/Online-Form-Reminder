@@ -1,8 +1,7 @@
-import { spawn } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DENO_DISPATCHER_URL, startDenoDispatcher } from './deno-dispatcher';
 import { startFakeResend } from './fake-resend';
-import { admin, dispatch, requireDispatchSecret } from './support';
+import { admin, dispatch, psql, requireDispatchSecret } from './support';
 
 // Outage and recovery (ARCHITECTURE.md §7.6), end to end: the real dispatcher code (run with Deno)
 // and the real local database, sending to a fake Resend that can be taken down. "Time passing" is
@@ -114,23 +113,6 @@ async function timePasses(ids: string[]) {
 }
 
 const subjectOf = (key: string) => JSON.parse(fake.requestsFor(key)[0].body).subject as string;
-
-// Runs SQL in its own database session (psql in the local database container, named after
-// project_id in supabase/config.toml), so two sessions can be open at the same moment.
-function psql(sql: string): Promise<{ output: string; finishedAt: number }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('docker', ['exec', '-i', 'supabase_db_office-reminders', 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    let output = '';
-    let errors = '';
-    child.stdout.on('data', (chunk) => (output += chunk));
-    child.stderr.on('data', (chunk) => (errors += chunk));
-    child.on('error', reject);
-    child.on('close', (code) => (code === 0 ? resolve({ output: output.trim(), finishedAt: Date.now() }) : reject(new Error(errors))));
-    child.stdin.end(sql);
-  });
-}
 
 beforeAll(async () => {
   requireDispatchSecret();

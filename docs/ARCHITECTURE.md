@@ -514,7 +514,21 @@ If a dispatcher dies mid-send, its lease expires. The job is re-claimed and rese
 - **Retryable:** network or timeout, HTTP 429 (respect `Retry-After`), 5xx, and `409 concurrent_idempotent_requests`. Backoff is 1 → 5 → 15 → 60 → 180 min, capped at `expires_at`.
 - **Non-retryable:** 4xx validation such as an invalid address. Also 401/403 (bad API key: alert admins). Also `409 invalid_idempotent_request` (a payload mismatch, which shouldn't happen with frozen payloads, so it's flagged).
 - **Every attempt writes a `notification_logs` row** with status code and error. Permanent failures go into a rate-limited alert email to admins and a red badge on the dashboard.
-- **Implemented in stage 5b** (`_shared/resend.ts`, checked against resend.com/docs on 2026-10-28). The red badge came in 5d (below). The alert email is moved to **Phase 6** (decided 2026-10-28).
+- **Implemented in stage 5b** (`_shared/resend.ts`, checked against resend.com/docs on 2026-10-28). The red badge came in 5d (below). The alert email is moved to **Phase 6** (decided 2026-10-28) and came in 6d (below).
+- **Implemented in stage 6d** (migrations `20261030090000_failure_alert_kind.sql`, `20261030090100_failure_alerts.sql`; `_shared/failure-alert.ts`). Decided 2026-10-30: at most one alert every 6 hours, for the same problems as the red badge.
+  - **What counts:** the badge's problems. These are failed messages, plus sent ones later reported bounced, complained, failed or suppressed, changed in the last 7 days.
+  - **Planning:** each dispatcher run calls `plan_failure_alerts()`. When there are unreported problems and no alert in the past 6 hours, it queues one `failure_alert` message per active administrator.
+    - Each reported problem gets an `included_in_alert` log entry at the alert's time.
+    - A problem is reported again only if the message changes afterwards (sent again and failed again, or a later bounce).
+    - With no active administrator, problems wait.
+    - An advisory lock makes overlapping runs plan one after the other, so they never send two alerts.
+  - **Sending:** the alert is an ordinary message: same test-mode gate (in test mode it goes to the test address), idempotency key, retries and log. `failure_alert_items(id)` gives its contents. It lists up to 20 problems, each with a link to its page, plus a count of the rest.
+  - **Never about alerts:** a failed alert shows on the badge only, so a broken provider can't set off alerts about alerts.
+  - **Limit:** if the provider itself is broken (revoked key, long outage), the alert can't get through either. The badge and the run heartbeat (§9 Monitoring; dead-man's switch in Phase 7) cover that case.
+  - **Verified:**
+    - 22 pgTAP tests (test 16). Mutation-checked: removing each rule fails it (8 mutations: alerts about alerts, the 6-hour limit, re-reporting, the 7-day window, inactive administrators, and so on).
+    - Unit tests for the template.
+    - `tests/integration/alerts.test.ts`: an alert planned and sent by the real dispatcher (run with Deno) to a fake Resend, plus a two-session race that fails without the lock (expected 0, received 54).
 - **Implemented in stage 5d** (migration `20261029090000_admin_cancel_retry.sql`):
   - **`cancel_notification_job(id)`** (admins only) cancels a `pending` message, with reason `cancelled_by_admin`. A message being sent right now can't be cancelled.
   - **`retry_notification_job(id)`** (admins only, database clock only, no caller-supplied time):

@@ -126,6 +126,7 @@ export const STATUS_REASON_LABELS: Record<string, string> = {
   retries_exhausted: 'Gave up after repeated temporary problems',
   rejected: 'Refused by the email provider',
   unsupported_kind: 'This kind of message is not supported yet',
+  no_problems: 'Nothing left to report',
   // Reminders
   rescheduled: 'The activity moved to a different time (a new reminder was planned)',
   activity_cancelled: 'The activity was cancelled',

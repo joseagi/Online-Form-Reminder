@@ -60,7 +60,7 @@ const JOB_COLUMNS =
 
 export type JobRow = {
   id: string;
-  kind: 'day_before_reminder' | 'weekly_summary' | 'test';
+  kind: 'day_before_reminder' | 'weekly_summary' | 'test' | 'failure_alert';
   destination: string;
   period_start: string | null;
   activity_id: string | null;

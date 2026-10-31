@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 
@@ -55,4 +56,21 @@ export async function dispatchUntilFinished(
     if (data && until(data)) return data;
   }
   throw new Error(`job ${id} was not finished after 10 dispatcher runs`);
+}
+
+// Runs SQL in its own database session (psql in the local database container, named after
+// project_id in supabase/config.toml), so two sessions can be open at the same moment.
+export function psql(sql: string): Promise<{ output: string; finishedAt: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('docker', ['exec', '-i', 'supabase_db_office-reminders', 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let output = '';
+    let errors = '';
+    child.stdout.on('data', (chunk) => (output += chunk));
+    child.stderr.on('data', (chunk) => (errors += chunk));
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve({ output: output.trim(), finishedAt: Date.now() }) : reject(new Error(errors))));
+    child.stdin.end(sql);
+  });
 }

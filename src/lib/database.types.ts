@@ -277,6 +277,11 @@ isOneToOne: false
 "delivery_status_rank":
 { Args: { "p_status": Database["public"]['Enums']["delivery_status"] }; Returns: number
                            },
+"failure_alert_items":
+{ Args: { "p_job_id": string }; Returns: {
+              "activity_title": string,"delivery_status": Database["public"]['Enums']["delivery_status"],"destination": string,"job_id": string,"kind": Database["public"]['Enums']["notification_kind"],"last_error_code": string,"last_error_message": string,"period_start": string,"scheduled_for": string,"status": Database["public"]['Enums']["job_status"],"status_reason": string
+            }[]
+                           },
 "freeze_notification_payload":
 { Args: { "p_html": string,"p_job_id": string,"p_subject": string,"p_text": string }; Returns: {
               "body_text": string,"html": string,"subject": string
@@ -301,6 +306,9 @@ isOneToOne: false
 { Args: Record<PropertyKey, never>; Returns: {
               "office_name": string,"timezone": string
             }[]
+                           },
+"plan_failure_alerts":
+{ Args: { "p_now"?: string }; Returns: number
                            },
 "plan_notifications":
 { Args: { "p_now"?: string }; Returns: number
@@ -347,7 +355,7 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "activity_status": "scheduled"|"completed"|"cancelled","activity_visibility": "office"|"restricted","app_role": "admin"|"staff","delivery_status": "unknown"|"delivered"|"delayed"|"bounced"|"complained"|"failed"|"suppressed","job_status": "pending"|"processing"|"sent"|"failed"|"cancelled"|"skipped","notification_channel": "email"|"whatsapp","notification_kind": "day_before_reminder"|"weekly_summary"|"test","notification_mode": "off"|"test"|"live","recipient_role": "responsible"|"collaborator"|"notify_only"
+            "activity_status": "scheduled"|"completed"|"cancelled","activity_visibility": "office"|"restricted","app_role": "admin"|"staff","delivery_status": "unknown"|"delivered"|"delayed"|"bounced"|"complained"|"failed"|"suppressed","job_status": "pending"|"processing"|"sent"|"failed"|"cancelled"|"skipped","notification_channel": "email"|"whatsapp","notification_kind": "day_before_reminder"|"weekly_summary"|"test"|"failure_alert","notification_mode": "off"|"test"|"live","recipient_role": "responsible"|"collaborator"|"notify_only"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -467,7 +475,7 @@ export const Constants = {
           }
         },"public": {
           Enums: {
-            "activity_status": ["scheduled", "completed", "cancelled"],"activity_visibility": ["office", "restricted"],"app_role": ["admin", "staff"],"delivery_status": ["unknown", "delivered", "delayed", "bounced", "complained", "failed", "suppressed"],"job_status": ["pending", "processing", "sent", "failed", "cancelled", "skipped"],"notification_channel": ["email", "whatsapp"],"notification_kind": ["day_before_reminder", "weekly_summary", "test"],"notification_mode": ["off", "test", "live"],"recipient_role": ["responsible", "collaborator", "notify_only"]
+            "activity_status": ["scheduled", "completed", "cancelled"],"activity_visibility": ["office", "restricted"],"app_role": ["admin", "staff"],"delivery_status": ["unknown", "delivered", "delayed", "bounced", "complained", "failed", "suppressed"],"job_status": ["pending", "processing", "sent", "failed", "cancelled", "skipped"],"notification_channel": ["email", "whatsapp"],"notification_kind": ["day_before_reminder", "weekly_summary", "test", "failure_alert"],"notification_mode": ["off", "test", "live"],"recipient_role": ["responsible", "collaborator", "notify_only"]
           }
         }
 } as const

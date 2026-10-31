@@ -1,6 +1,7 @@
 // Notification dispatcher. Called every few minutes by Supabase Cron (pg_cron + pg_net), and only
 // with the shared dispatch secret. Each run:
-//   1. plans the weekly summaries and reminders (idempotent),
+//   1. plans the weekly summaries and reminders (idempotent), and a failure alert to the
+//      administrators when messages need attention (at most one every 6 hours),
 //   2. claims due jobs (leases them, so concurrent runs never share a job),
 //   3. builds each message (rendered once, then frozen so retries resend the same payload);
 //      reminders are re-checked against the activity on every attempt,
@@ -8,6 +9,7 @@
 //      only the log), with the job's dedupe key as the idempotency key,
 //   5. records the outcome, and logs run.started / run.finished as a heartbeat.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { renderFailureAlert, type AlertItem } from '../_shared/failure-alert.ts';
 import { markAsTest, type RenderedMessage } from '../_shared/message.ts';
 import { resolveGate, routeMessage, type Gate, type SettingsMode } from '../_shared/mode.ts';
 import { LogProvider, type NotificationProvider } from '../_shared/providers.ts';
@@ -18,7 +20,7 @@ import { renderWeeklySummary, type SummaryItem } from '../_shared/weekly-summary
 
 type Job = {
   id: string;
-  kind: 'day_before_reminder' | 'weekly_summary' | 'test';
+  kind: 'day_before_reminder' | 'weekly_summary' | 'test' | 'failure_alert';
   dedupe_key: string;
   destination: string;
   period_start: string | null;
@@ -110,6 +112,11 @@ async function dispatch(supabase: SupabaseClient, runId: string, counts: Counts)
   const planned = await supabase.rpc('plan_notifications');
   if (planned.error) throw new Error(`planning failed: ${planned.error.message}`);
   counts.planned = planned.data ?? 0;
+  // A problem with the alert must not hold up everyone else's messages: it is reported instead.
+  const alerts = await supabase.rpc('plan_failure_alerts');
+  if (alerts.error) console.error('Planning the failure alert failed:', alerts.error.message);
+  counts.planned += alerts.data ?? 0;
+  const alertWarning = alerts.error ? `The failure alert could not be planned: ${alerts.error.message}` : null;
 
   const { data: settings, error: settingsError } = await supabase
     .from('system_settings')
@@ -125,7 +132,7 @@ async function dispatch(supabase: SupabaseClient, runId: string, counts: Counts)
     testRedirectEmail: settings.test_redirect_email,
   });
   counts.mode = gate.action === 'skip' ? 'off' : gate.mode;
-  counts.warning = [gate.action === 'send' && gate.mode === 'test' ? gate.warning : null, resend.warning].filter(Boolean).join(' ') || null;
+  counts.warning = [gate.action === 'send' && gate.mode === 'test' ? gate.warning : null, resend.warning, alertWarning].filter(Boolean).join(' ') || null;
   counts.provider = resend.provider?.name ?? 'log';
   if (counts.warning) console.warn(counts.warning);
 
@@ -221,6 +228,8 @@ async function buildMessage(ctx: Context, job: Job): Promise<Built> {
     }
     case 'day_before_reminder':
       return reminderMessage(ctx, job);
+    case 'failure_alert':
+      return alertMessage(ctx, job);
     default:
       return { skip: 'unsupported_kind' };
   }
@@ -271,6 +280,26 @@ async function reminderMessage(ctx: Context, job: Job): Promise<Built> {
       officeTimezone: ctx.settings.timezone,
       appUrl: appUrl(),
       details: data,
+    })),
+  };
+}
+
+// The failure alert lists the problems recorded for it when it was planned (written once, then
+// frozen like every other message).
+async function alertMessage(ctx: Context, job: Job): Promise<Built> {
+  const stored = storedMessage(job);
+  if (stored) return { message: stored };
+
+  const { data, error } = await ctx.supabase.rpc('failure_alert_items', { p_job_id: job.id });
+  if (error) throw new Error(`alert content unavailable: ${error.message}`);
+  const items = (data ?? []) as AlertItem[];
+  if (items.length === 0) return { skip: 'no_problems' };
+  return {
+    message: await freeze(ctx, job, renderFailureAlert({
+      officeName: ctx.settings.office_name,
+      officeTimezone: ctx.settings.timezone,
+      appUrl: appUrl(),
+      items,
     })),
   };
 }
